@@ -1,6 +1,6 @@
 # Laravel API DDD Template
 
-> **Автоматическая установка:**
+> **Автоматическая установка (не требует локального PHP/Composer):**
 > ```bash
 > # Быстрый старт
 > curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/install.sh | bash -s -- my-project
@@ -10,6 +10,19 @@
 > cd my-project
 > bash install.sh my-project
 > ```
+>
+> **Что делает скрипт:**
+> 1. Создаёт Laravel 13 проект через `laravel.build` (не нужен локальный Composer)
+> 2. Устанавливает все пакеты через Docker
+> 3. **Заменяет Laravel Sail на Server Side Up Docker** (production-ready)
+> 4. Создаёт DDD структуру, конфигурационные файлы, пример домена
+> 5. Настраивает CI/CD, тесты, миграции
+>
+> **Server Side Up Docker преимущества:**
+> - ✅ Автоматические миграции при деплое (AUTOBOOT)
+> - ✅ Встроенная поддержка Horizon и Scheduler
+> - ✅ Health checks из коробки
+> - ✅ Оптимизирован для production
 
 ## Описание проекта
 
@@ -1601,58 +1614,72 @@ final class UserController extends Controller
 
 **Быстрая установка проекта:**
 ```bash
-# Автоматическая установка (рекомендуется)
-curl -sL https://raw.githubusercontent.com/your-repo/install.sh | bash -s -- my-project
+# Автоматическая установка (не требует локального PHP/Composer)
+curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_TEMPLATE/install.sh | bash -s -- my-project
 
 # Перейти в проект
 cd my-project
 
-# Запустить Docker
+# Запустить Docker (Server Side Up)
 docker-compose up -d
 ```
 
-**Проверка качества кода (локально):**
+**Проверка качества кода:**
 ```bash
-# Установка зависимостей
-composer install
-
 # Запуск всех проверок (включая мутационное тестирование)
-composer qa
+docker-compose exec app composer qa
 
 # Быстрая проверка (без мутационного тестирования)
-composer qa:fast
+docker-compose exec app composer qa:fast
 
 # Или по отдельности:
-composer pint          # Автоформатирование
-composer pint:test     # Проверка стиля кода
-composer phpstan       # Статический анализ
-composer test          # Тесты
-composer test:coverage # Тесты с покрытием
-composer type-coverage # Проверка типов
-composer infection     # Мутационное тестирование
+docker-compose exec app composer pint          # Автоформатирование
+docker-compose exec app composer pint:test     # Проверка стиля кода
+docker-compose exec app composer phpstan       # Статический анализ
+docker-compose exec app composer test          # Тесты
+docker-compose exec app composer test:coverage # Тесты с покрытием
+docker-compose exec app composer type-coverage # Проверка типов
+docker-compose exec app composer infection     # Мутационное тестирование
 ```
 
-**Запуск в Docker:**
+**Полезные Docker команды:**
 ```bash
 # Запуск контейнеров
 docker-compose up -d
 
-# Установка зависимостей
-docker-compose exec app composer install
+# Остановка контейнеров
+docker-compose stop
 
-# Запуск миграций
-docker-compose exec app php artisan migrate
+# Выполнение команд в контейнере
+docker-compose exec app php artisan <command>
+docker-compose exec app composer <command>
 
-# Запуск тестов
-docker-compose exec app composer qa
+# Просмотр логов
+docker-compose logs -f app
+
+# Перезапуск приложения
+docker-compose restart app
+```
+
+**Server Side Up автоматизации:**
+```bash
+# Миграции выполняются автоматически при старте (AUTOBOOT_RUN_MIGRATIONS=true)
+# Horizon запускается автоматически (HORIZON_ENABLED=true)
+# Scheduler запускается автоматически (SCHEDULER_ENABLED=true)
+
+# Отключить автоматизации (для отладки)
+docker-compose exec app bash
+echo "AUTOBOOT=false" >> .env
+exit
+docker-compose restart app
 ```
 
 **Что делает install.sh:**
-1. Создаёт Laravel 13 проект
-2. Устанавливает все пакеты (Spatie Data, Event Sourcing, Permission, etc.)
-3. Создаёт DDD структуру папок
-4. Настраивает Docker (Server Side Up image)
-5. Создаёт конфигурационные файлы (pint.json, phpstan.neon, infection.json5)
+1. Создаёт Laravel 13 проект через `laravel.build` (с PostgreSQL, Redis, Mailpit)
+2. Устанавливает все пакеты через Docker
+3. **Заменяет Laravel Sail на Server Side Up Docker** (production-ready)
+4. Создаёт DDD структуру папок
+5. Настраивает конфигурационные файлы (pint.json, phpstan.neon, infection.json5)
 6. Генерирует пример домена "User" (Commands, Handlers, DTOs, Controllers)
 7. Создаёт миграции
 8. Настраивает маршруты API
@@ -1661,7 +1688,7 @@ docker-compose exec app composer qa
 
 ---
 
-**Версия документа:** 1.10  
+**Версия документа:** 1.12  
 **Дата создания:** 2026-03-19  
 **Дата обновления:** 2026-03-19  
 **Статус:** Черновик

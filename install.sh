@@ -50,22 +50,32 @@ log_info "Создание проекта: ${PROJECT_NAME}"
 log_info "Путь: ${PROJECT_DIR}"
 
 ################################################################################
-# Шаг 1: Создание Laravel проекта
+# Шаг 1: Создание Laravel проекта через Laravel Sail (без локального Composer)
 ################################################################################
-log_info "Шаг 1/12: Создание Laravel проекта..."
+log_info "Шаг 1/12: Создание Laravel проекта (через Laravel Sail)..."
 
-composer create-project laravel/laravel "${PROJECT_NAME}" --prefer-dist
+# Используем Laravel Sail для создания проекта без локального Composer
+# Это создаст проект с Docker-окружением
+curl -s "https://laravel.build/${PROJECT_NAME}?with=pgsql,redis,meilisearch,mailpit" | bash
 
 cd "${PROJECT_DIR}" || exit 1
 
 log_success "Laravel проект создан"
 
 ################################################################################
-# Шаг 2: Установка основных пакетов
+# Шаг 2: Установка основных пакетов через Docker
 ################################################################################
 log_info "Шаг 2/12: Установка основных пакетов..."
 
-composer require \
+# Запускаем контейнеры для установки зависимостей
+./vendor/bin/sail up -d
+
+# Ждём готовности контейнера
+log_info "Ожидание готовности контейнеров..."
+sleep 10
+
+# Устанавливаем пакеты через Sail
+./vendor/bin/sail composer require \
     laravel/framework:^13.0 \
     spatie/laravel-data:^4.0 \
     spatie/laravel-event-sourcing:^10.0 \
@@ -76,11 +86,11 @@ composer require \
 log_success "Основные пакеты установлены"
 
 ################################################################################
-# Шаг 3: Установка dev-зависимостей
+# Шаг 3: Установка dev-зависимостей через Docker
 ################################################################################
 log_info "Шаг 3/12: Установка dev-зависимостей..."
 
-composer require --dev \
+./vendor/bin/sail composer require --dev \
     laravel/pint:^1.0 \
     phpstan/phpstan:^2.0 \
     phpstan/phpstan-strict-rules:^2.0 \
@@ -118,13 +128,20 @@ mkdir -p src/Domains/User/Interfaces/CLI
 log_success "Структура доменов создана"
 
 ################################################################################
-# Шаг 5: Создание Docker-файлов
+# Шаг 5: Замена Laravel Sail на Server Side Up Docker
 ################################################################################
-log_info "Шаг 5/12: Создание Docker-конфигурации..."
+log_info "Шаг 5/13: Замена Sail на Server Side Up Docker..."
 
+# Останавливаем Sail контейнеры
+./vendor/bin/sail stop 2>/dev/null || true
+
+# Удаляем docker-compose.yml от Sail
+rm -f docker-compose.yml
+
+# Создаём директорию для Dockerfile
 mkdir -p docker/php
 
-# Dockerfile
+# Dockerfile от Server Side Up
 cat > docker/php/Dockerfile << 'DOCKERFILE'
 FROM serversideup/php:8.5-fpm-nginx
 
@@ -147,7 +164,7 @@ RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 USER www-data
 DOCKERFILE
 
-# docker-compose.yml
+# docker-compose.yml для Server Side Up
 cat > docker-compose.yml << 'DOCKERCOMPOSE'
 version: '3.8'
 services:
@@ -232,12 +249,15 @@ bootstrap/cache/*
 !bootstrap/.gitignore
 DOCKERIGNORE
 
-log_success "Docker-конфигурация создана"
+# Удаляем лишние файлы Sail
+rm -f docker-compose.override.yml 2>/dev/null || true
+
+log_success "Server Side Up Docker настроен"
 
 ################################################################################
 # Шаг 6: Создание конфигурационных файлов
 ################################################################################
-log_info "Шаг 6/12: Создание конфигурационных файлов..."
+log_info "Шаг 6/13: Создание конфигурационных файлов..."
 
 # pint.json
 cat > pint.json << 'PINTJSON'
@@ -302,28 +322,16 @@ INFECTIONJSON
 
 # .env (копируем из .env.example и добавляем наши переменные)
 cp .env.example .env
-php artisan key:generate
 
-# Добавляем переменные для PostgreSQL и Redis
+# Генерируем ключ через docker-compose
+docker-compose up -d
+log_info "Ожидание готовности контейнеров..."
+sleep 15
+
+docker-compose exec -T app php artisan key:generate
+
+# Добавляем переменные для Server Side Up автоматизаций
 cat >> .env << ENVVARS
-
-# PostgreSQL
-DB_CONNECTION=pgsql
-DB_HOST=127.0.0.1
-DB_PORT=5432
-DB_DATABASE=app
-DB_USERNAME=app
-DB_PASSWORD=secret
-
-# Redis
-REDIS_HOST=127.0.0.1
-REDIS_PASSWORD=null
-REDIS_PORT=6379
-
-# Cache & Session
-CACHE_STORE=redis
-SESSION_DRIVER=redis
-QUEUE_CONNECTION=redis
 
 # Server Side Up
 AUTOBOOT=true
@@ -337,10 +345,10 @@ log_success "Конфигурационные файлы созданы"
 ################################################################################
 # Шаг 7: Обновление composer.json скриптов
 ################################################################################
-log_info "Шаг 7/12: Настройка composer скриптов..."
+log_info "Шаг 7/13: Настройка composer скриптов..."
 
-# Читаем текущий composer.json и добавляем скрипты
-php -r '
+# Читаем текущий composer.json и добавляем скрипты через docker-compose
+docker-compose exec -T app php -r '
 $composer = json_decode(file_get_contents("composer.json"), true);
 $composer["scripts"]["pint"] = "pint";
 $composer["scripts"]["pint:test"] = "pint --test";
@@ -804,12 +812,12 @@ log_success "Пример домена User создан"
 ################################################################################
 # Шаг 9: Создание миграций
 ################################################################################
-log_info "Шаг 9/12: Создание миграций..."
+log_info "Шаг 9/13: Создание миграций..."
 
-php artisan make:migration create_users_table
-php artisan make:migration create_permission_tables
-php artisan make:migration create_projected_events_table
-php artisan make:migration create_stored_events_table
+docker-compose exec -T app php artisan make:migration create_users_table
+docker-compose exec -T app php artisan make:migration create_permission_tables
+docker-compose exec -T app php artisan make:migration create_projected_events_table
+docker-compose exec -T app php artisan make:migration create_stored_events_table
 
 log_success "Миграции созданы"
 
@@ -994,17 +1002,18 @@ echo ""
 echo "1. Перейдите в директорию проекта:"
 echo "   cd ${PROJECT_NAME}"
 echo ""
-echo "2. Запустите Docker контейнеры:"
+echo "2. Запустите Docker контейнеры (Server Side Up):"
 echo "   docker-compose up -d"
 echo ""
-echo "3. Запустите миграции (если не выполнились автоматически):"
+echo "3. Запустите миграции:"
 echo "   docker-compose exec app php artisan migrate"
 echo ""
 echo "4. Запустите все проверки качества:"
-echo "   composer qa"
+echo "   docker-compose exec app composer qa"
 echo ""
 echo "5. Или быстрая проверка (без мутационного тестирования):"
-echo "   composer qa:fast"
+echo "   docker-compose exec app composer qa:fast"
 echo ""
 log_info "Документация: README.md"
+log_info "Docker команды: docker-compose exec app <command>"
 echo ""
