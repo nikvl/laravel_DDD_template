@@ -3,7 +3,7 @@
 > **Автоматическая установка:**
 > ```bash
 > # Быстрый старт
-> curl -sL https://raw.githubusercontent.com/your-repo/install.sh | bash -s -- my-project
+> curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/install.sh | bash -s -- my-project
 > 
 > # Или вручную
 > git clone https://github.com/your-repo/laravel_serverside_ddd_template.git my-project
