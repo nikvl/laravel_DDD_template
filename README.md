@@ -12,7 +12,7 @@
 > ```
 >
 > **Что делает скрипт:**
-> 1. Создаёт Laravel 13 проект через `laravel.build` (не нужен локальный Composer)
+> 1. Создаёт Laravel 12 проект через `laravel.build` (не нужен локальный Composer)
 > 2. Устанавливает все пакеты через Docker
 > 3. **Заменяет Laravel Sail на Server Side Up Docker** (production-ready)
 > 4. Создаёт DDD структуру, конфигурационные файлы, пример домена
@@ -47,10 +47,10 @@
 
 | Компонент | Технология | Версия |
 |-----------|------------|--------|
-| Язык | PHP | 8.5+ |
-| Фреймворк | Laravel | 13.x+ |
-| База данных | PostgreSQL | 14+ |
-| Кэш/Очереди | Redis | 6.2+ |
+| Язык | PHP | 8.4+ |
+| Фреймворк | Laravel | 12.x+ |
+| База данных | PostgreSQL | 17+ |
+| Кэш/Очереди | Redis | 8+ |
 | Поиск | Elasticsearch / Meilisearch | 8.x / 1.x |
 | Контейнеризация | Docker, Docker Compose | 24+ |
 
@@ -59,21 +59,21 @@
 ```json
 {
   "require": {
-    "laravel/framework": "^13.0",
-    "spatie/laravel-data": "^4.0",
-    "spatie/laravel-event-sourcing": "^10.0",
-    "spatie/laravel-permission": "^7.0",
-    "thecodingmachine/safe": "^2.0"
+    "laravel/framework": "^12.0",
+    "spatie/laravel-data": "^5.0",
+    "spatie/laravel-event-sourcing": "^8.0",
+    "spatie/laravel-permission": "^8.0",
+    "thecodingmachine/safe": "^3.0"
   },
   "require-dev": {
     "laravel/pint": "^1.0",
     "phpstan/phpstan": "^2.0",
     "phpstan/phpstan-strict-rules": "^2.0",
     "phpstan/phpstan-phpunit": "^2.0",
-    "pestphp/pest": "^3.0",
-    "pestphp/pest-plugin-laravel": "^3.0",
-    "pestphp/pest-plugin-type-coverage": "^3.0",
-    "infection/infection": "^0.29.0",
+    "pestphp/pest": "^4.0",
+    "pestphp/pest-plugin-laravel": "^4.0",
+    "pestphp/pest-plugin-type-coverage": "^4.0",
+    "infection/infection": "^0.30.0",
     "infection/phpstan-adapter": "^0.29.0",
     "infection/pest-adapter": "^0.29.0"
   }
@@ -1135,12 +1135,385 @@ final class UserController extends Controller
 }
 ```
 
-### 7.2. API-документация
+### 7.2. API-документация (Swagger/OpenAPI)
 
 **Требования:**
-- OpenAPI/Swagger спецификация
-- Laravel Scribe или OpenAPI Generator
+- OpenAPI 3.0 спецификация
+- Автоматическая генерация через атрибуты PHPDoc
+- Swagger UI для интерактивного тестирования
 - Примеры запросов и ответов
+
+**Рекомендуемый пакет:** [darkaonline/l5-swagger](https://github.com/DarkaOnLine/l5-swagger)
+
+**Установка:**
+```bash
+docker-compose exec app composer require --dev darkaonline/l5-swagger
+docker-compose exec app php artisan vendor:publish --provider "L5Swagger\L5SwaggerServiceProvider"
+```
+
+**Конфигурация (config/l5-swagger.php):**
+```php
+return [
+    'default' => 'default',
+    'documentations' => [
+        'default' => [
+            'api' => [
+                'title' => 'Laravel DDD API',
+            ],
+            'routes' => [
+                'api' => 'api/documentation',
+            ],
+            'oauth' => [
+                'enabled' => false,
+            ],
+            'swagger-ui' => [
+                'enabled' => true,
+                'ui' => [
+                    'docExpansion' => 'none',
+                    'operationsSorter' => 'alpha',
+                ],
+            ],
+        ],
+    ],
+    'defaults' => [
+        'paths' => [
+            'docs' => storage_path('api-docs'),
+            'views' => base_path('resources/views/vendor/l5-swagger'),
+        ],
+        'scan_options' => [
+            'analyser' => new \OpenApi\StaticAnalyser(),
+            'analysis' => new \OpenApi\Analysis(),
+            'processors' => [
+                new \OpenApi\Processors\DocBlockDescriptions(),
+                new \OpenApi\Processors\MergeIntoOpenApi(),
+                new \OpenApi\Processors\MergeIntoComponents(),
+                new \OpenApi\Processors\ExpandClasses(),
+                new \OpenApi\Processors\ExpandInterfaces(),
+                new \OpenApi\Processors\ExpandTraits(),
+                new \OpenApi\Processors\ExpandEnums(),
+                new \OpenApi\Processors\AugmentSchemas(),
+                new \OpenApi\Processors\AugmentProperties(),
+                new \OpenApi\Processors\BuildPaths(),
+                new \OpenApi\Processors\AugmentParameters(),
+                new \OpenApi\Processors\AugmentOperations(),
+            ],
+        ],
+    ],
+];
+```
+
+**Пример аннотаций для контроллера:**
+```php
+namespace Domains\User\Interfaces\Http\Controllers;
+
+use Domains\User\Application\Commands\CreateUserCommand;
+use Domains\User\Application\Commands\UpdateUserCommand;
+use Domains\User\Application\Queries\GetUserQuery;
+use Domains\User\Interfaces\Http\DTOs\UserResponseDTO;
+use Domains\User\Interfaces\Http\DTOs\UserListResponseDTO;
+use Illuminate\Routing\Controller;
+use OpenApi\Attributes as OA;
+
+#[OA\Info(
+    version: '1.0.0',
+    title: 'User API',
+    description: 'API для управления пользователями',
+)]
+#[OA\Tag(name: 'Users', description: 'Операции с пользователями')]
+final class UserController extends Controller
+{
+    /**
+     * Создание пользователя
+     */
+    #[OA\Post(
+        path: '/api/users',
+        operationId: 'createUser',
+        tags: ['Users'],
+        summary: 'Создание нового пользователя',
+        requestBody: new OA\RequestBody(
+            description: 'Данные для создания пользователя',
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email', example: 'user@example.com'),
+                    new OA\Property(property: 'name', type: 'string', example: 'John Doe'),
+                    new OA\Property(property: 'phone', type: 'string', nullable: true, example: '+1234567890'),
+                ],
+                type: 'object',
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: 'Пользователь успешно создан',
+                content: new OA\JsonContent(ref: '#/components/schemas/UserResponseDTO'),
+            ),
+            new OA\Response(
+                response: 422,
+                description: 'Ошибка валидации',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string', example: 'Validation errors'),
+                        new OA\Property(
+                            property: 'errors',
+                            type: 'object',
+                            additionalProperties: new OA\ArrayType(items: new OA\Items(type: 'string')),
+                        ),
+                    ],
+                    type: 'object',
+                ),
+            ),
+        ],
+    )]
+    public function store(CreateUserCommand $command): UserResponseDTO
+    {
+        $userId = dispatch_sync($command);
+
+        return UserResponseDTO::fromEntity(
+            dispatch(new GetUserQuery($userId))
+        );
+    }
+
+    /**
+     * Получение пользователя
+     */
+    #[OA\Get(
+        path: '/api/users/{id}',
+        operationId: 'getUser',
+        tags: ['Users'],
+        summary: 'Получение информации о пользователе',
+        parameters: [
+            new OA\Parameter(
+                name: 'id',
+                in: 'path',
+                required: true,
+                description: 'UUID пользователя',
+                schema: new OA\Schema(type: 'string', format: 'uuid'),
+            ),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Информация о пользователе',
+                content: new OA\JsonContent(ref: '#/components/schemas/UserResponseDTO'),
+            ),
+            new OA\Response(
+                response: 404,
+                description: 'Пользователь не найден',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string', example: 'User not found'),
+                    ],
+                    type: 'object',
+                ),
+            ),
+        ],
+    )]
+    public function show(string $id): UserResponseDTO
+    {
+        return UserResponseDTO::fromEntity(
+            dispatch(new GetUserQuery($id))
+        );
+    }
+
+    /**
+     * Обновление пользователя
+     */
+    #[OA\Put(
+        path: '/api/users/{id}',
+        operationId: 'updateUser',
+        tags: ['Users'],
+        summary: 'Обновление данных пользователя',
+        parameters: [
+            new OA\Parameter(
+                name: 'id',
+                in: 'path',
+                required: true,
+                description: 'UUID пользователя',
+                schema: new OA\Schema(type: 'string', format: 'uuid'),
+            ),
+        ],
+        requestBody: new OA\RequestBody(
+            description: 'Данные для обновления пользователя',
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email', nullable: true, example: 'newemail@example.com'),
+                    new OA\Property(property: 'name', type: 'string', nullable: true, example: 'New Name'),
+                    new OA\Property(property: 'phone', type: 'string', nullable: true, example: '+0987654321'),
+                ],
+                type: 'object',
+            ),
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Пользователь успешно обновлён',
+                content: new OA\JsonContent(ref: '#/components/schemas/UserResponseDTO'),
+            ),
+            new OA\Response(
+                response: 422,
+                description: 'Ошибка валидации',
+            ),
+            new OA\Response(
+                response: 404,
+                description: 'Пользователь не найден',
+            ),
+        ],
+    )]
+    public function update(string $id, UpdateUserCommand $command): UserResponseDTO
+    {
+        dispatch_sync($command->withId($id));
+
+        return UserResponseDTO::fromEntity(
+            dispatch(new GetUserQuery($id))
+        );
+    }
+
+    /**
+     * Список пользователей
+     */
+    #[OA\Get(
+        path: '/api/users',
+        operationId: 'listUsers',
+        tags: ['Users'],
+        summary: 'Получение списка пользователей с пагинацией',
+        parameters: [
+            new OA\Parameter(
+                name: 'page',
+                in: 'query',
+                required: false,
+                description: 'Номер страницы',
+                schema: new OA\Schema(type: 'integer', default: 1),
+            ),
+            new OA\Parameter(
+                name: 'per_page',
+                in: 'query',
+                required: false,
+                description: 'Количество записей на странице',
+                schema: new OA\Schema(type: 'integer', default: 15),
+            ),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Список пользователей',
+                content: new OA\JsonContent(ref: '#/components/schemas/UserListResponseDTO'),
+            ),
+        ],
+    )]
+    public function index(\Illuminate\Http\Request $request): UserListResponseDTO
+    {
+        return UserListResponseDTO::fromPaginator(
+            dispatch(new ListUsersQuery($request->query()))
+        );
+    }
+}
+```
+
+**Пример схемы (Schema) для DTO:**
+```php
+namespace Domains\User\Interfaces\Http\DTOs;
+
+use OpenApi\Attributes as OA;
+use Spatie\LaravelData\Data;
+use Spatie\LaravelData\Attributes\Wrap;
+
+#[Wrap('data')]
+#[OA\Schema(
+    schema: 'UserResponseDTO',
+    title: 'UserResponseDTO',
+    description: 'Ответ с данными пользователя',
+    properties: [
+        new OA\Property(property: 'id', type: 'string', format: 'uuid', example: '550e8400-e29b-41d4-a716-446655440000'),
+        new OA\Property(property: 'email', type: 'string', format: 'email', example: 'user@example.com'),
+        new OA\Property(property: 'name', type: 'string', example: 'John Doe'),
+        new OA\Property(property: 'phone', type: 'string', nullable: true, example: '+1234567890'),
+        new OA\Property(property: 'created_at', type: 'string', format: 'date-time', example: '2024-01-01T00:00:00Z'),
+    ],
+    type: 'object',
+)]
+final class UserResponseDTO extends Data
+{
+    public function __construct(
+        public readonly string $id,
+        public readonly string $email,
+        public readonly string $name,
+        public readonly ?string $phone,
+        public readonly \DateTimeImmutable $created_at,
+    ) {}
+}
+```
+
+**Пример схемы для коллекции:**
+```php
+namespace Domains\User\Interfaces\Http\DTOs;
+
+use OpenApi\Attributes as OA;
+use Spatie\LaravelData\Data;
+use Spatie\LaravelData\Attributes\Wrap;
+
+#[Wrap('data')]
+#[OA\Schema(
+    schema: 'UserListResponseDTO',
+    title: 'UserListResponseDTO',
+    description: 'Ответ со списком пользователей',
+    properties: [
+        new OA\Property(
+            property: 'users',
+            type: 'array',
+            items: new OA\Items(ref: '#/components/schemas/UserResponseDTO'),
+        ),
+        new OA\Property(property: 'total', type: 'integer', example: 100),
+        new OA\Property(property: 'page', type: 'integer', example: 1),
+        new OA\Property(property: 'per_page', type: 'integer', example: 15),
+    ],
+    type: 'object',
+)]
+final class UserListResponseDTO extends Data
+{
+    public function __construct(
+        /** @var array<int, UserResponseDTO> */
+        public readonly array $users,
+        public readonly int $total,
+        public readonly int $page,
+        public readonly int $perPage,
+    ) {}
+}
+```
+
+**Генерация документации:**
+```bash
+# Генерация Swagger документации
+docker-compose exec app php artisan l5-swagger:generate
+
+# Доступ к Swagger UI
+# http://localhost:8080/api/documentation
+
+# Доступ к JSON спецификации
+# http://localhost:8080/api/documentation.json
+```
+
+**Альтернатива: Laravel Scribe (автоматическая документация)**
+
+Если вы предпочитаете автоматическую генерацию из существующего кода:
+
+```bash
+docker-compose exec app composer require --dev knuckleswtf/scribe
+docker-compose exec app php artisan vendor:publish --tag=scribe-config
+```
+
+**Преимущества Scribe:**
+- Автоматическая генерация из контроллеров и правил валидации
+- Не требует аннотаций
+- Создаёт красивую статическую HTML документацию
+- Поддерживает Try It Out через Postman/Insomnia
+
+**Генерация документации Scribe:**
+```bash
+docker-compose exec app php artisan scribe:generate
+# Документация доступна по адресу: /docs
+```
 
 ### 7.3. API-аутентификация
 
@@ -1164,7 +1537,7 @@ final class UserController extends Controller
 
 ### 8.2. RBAC (Role-Based Access Control)
 
-**Пакет:** [spatie/laravel-permission v7](https://spatie.be/docs/laravel-permission/v7/introduction)
+**Пакет:** [spatie/laravel-permission v8](https://spatie.be/docs/laravel-permission/v8/introduction)
 
 **Требования:**
 - Роли для группировки разрешений
@@ -1349,6 +1722,386 @@ final class AuthorizeResourceAccess
 - Sentry для error tracking
 - Prometheus + Grafana для метрик
 
+### 9.3. Нагрузочное тестирование
+
+**Требования:**
+- Локальное нагрузочное тестирование API эндпоинтов
+- Проверка производительности перед релизом
+- Выявление узких мест в коде
+- Тестирование сценариев использования (user flows)
+
+**Рекомендуемые инструменты:**
+
+#### k6 (основной инструмент)
+
+Современный инструмент нагрузочного тестирования на JavaScript/TypeScript.
+
+**Установка:**
+```bash
+# macOS
+brew install k6
+
+# Linux
+sudo gpg -k
+sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+sudo apt-get update
+sudo apt-get install k6
+
+# Docker
+docker run --rm --network host grafana/k6
+```
+
+**Пример скрипта нагрузочного теста (load-tests/user-api.js):**
+```javascript
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+import { Rate, Trend } from 'k6/metrics';
+
+// Кастомные метрики
+const errorRate = new Rate('errors');
+const apiLatency = new Trend('api_latency');
+
+// Конфигурация теста
+export const options = {
+  // Сценарии нагрузки
+  scenarios: {
+    // Лёгкая нагрузка (smoke test)
+    smoke: {
+      executor: 'constant-vus',
+      vus: 5,
+      duration: '30s',
+      gracefulStop: '5s',
+      tags: { test_type: 'smoke' },
+    },
+    // Нагрузочный тест (load test)
+    load: {
+      executor: 'ramping-vus',
+      startVUs: 0,
+      stages: [
+        { duration: '30s', target: 50 },   // Ramp up до 50 VUs
+        { duration: '1m', target: 50 },    // Пиковая нагрузка
+        { duration: '30s', target: 100 },  // Ramp up до 100 VUs
+        { duration: '1m', target: 100 },   // Пиковая нагрузка
+        { duration: '30s', target: 0 },    // Ramp down
+      ],
+      gracefulRampDown: '10s',
+      tags: { test_type: 'load' },
+      startTime: '35s',
+    },
+    // Стресс-тест
+    stress: {
+      executor: 'ramping-arrival-rate',
+      startRate: 0,
+      stages: [
+        { duration: '1m', target: 100 },   // 100 req/s
+        { duration: '1m', target: 200 },   // 200 req/s
+        { duration: '1m', target: 300 },   // 300 req/s
+        { duration: '1m', target: 0 },     // Ramp down
+      ],
+      preAllocatedVUs: 200,
+      maxVUs: 500,
+      tags: { test_type: 'stress' },
+      startTime: '3m5s',
+    },
+  },
+  
+  // Пороговые значения (тест провалится если не пройдены)
+  thresholds: {
+    http_req_duration: [
+      'p(50)<200',  // 50% запросов < 200ms
+      'p(90)<500',  // 90% запросов < 500ms
+      'p(95)<800',  // 95% запросов < 800ms
+    ],
+    http_req_failed: ['rate<0.01'],  // < 1% ошибок
+    http_reqs: ['rate>100'],         // > 100 req/s
+    errors: ['rate<0.01'],           // < 1% ошибок в кастомной метрике
+  },
+};
+
+// Базовый URL API
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
+const API_TOKEN = __ENV.API_TOKEN || 'your-test-token';
+
+// Общие заголовки
+const headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'Authorization': `Bearer ${API_TOKEN}`,
+};
+
+// Тестовые данные
+const testUsers = [
+  { email: 'user1@test.com', name: 'User 1', phone: '+1234567890' },
+  { email: 'user2@test.com', name: 'User 2', phone: '+0987654321' },
+  { email: 'user3@test.com', name: 'User 3', phone: '+1122334455' },
+];
+
+// Сценарий 1: Создание пользователя
+export function create_user() {
+  const user = testUsers[Math.floor(Math.random() * testUsers.length)];
+  
+  const response = http.post(
+    `${BASE_URL}/api/users`,
+    JSON.stringify(user),
+    { headers }
+  );
+  
+  const passed = check(response, {
+    'create user: status is 201': (r) => r.status === 201,
+    'create user: has data': (r) => JSON.parse(r.body).data !== undefined,
+    'create user: has id': (r) => JSON.parse(r.body).data?.id !== undefined,
+  });
+  
+  errorRate.add(!passed);
+  apiLatency.add(response.timings.duration);
+  
+  sleep(0.5);
+  
+  return response;
+}
+
+// Сценарий 2: Получение пользователя
+export function get_user(userId) {
+  const response = http.get(
+    `${BASE_URL}/api/users/${userId}`,
+    { headers }
+  );
+  
+  const passed = check(response, {
+    'get user: status is 200': (r) => r.status === 200,
+    'get user: has data': (r) => JSON.parse(r.body).data !== undefined,
+  });
+  
+  errorRate.add(!passed);
+  apiLatency.add(response.timings.duration);
+  
+  sleep(0.3);
+  
+  return response;
+}
+
+// Сценарий 3: Список пользователей
+export function list_users(page = 1) {
+  const response = http.get(
+    `${BASE_URL}/api/users?page=${page}&per_page=15`,
+    { headers }
+  );
+  
+  const passed = check(response, {
+    'list users: status is 200': (r) => r.status === 200,
+    'list users: has data': (r) => JSON.parse(r.body).data !== undefined,
+    'list users: has users array': (r) => Array.isArray(JSON.parse(r.body).data?.users),
+  });
+  
+  errorRate.add(!passed);
+  apiLatency.add(response.timings.duration);
+  
+  sleep(0.5);
+  
+  return response;
+}
+
+// Сценарий 4: Обновление пользователя
+export function update_user(userId) {
+  const updateData = {
+    name: `Updated User ${Date.now()}`,
+    phone: '+9999999999',
+  };
+  
+  const response = http.put(
+    `${BASE_URL}/api/users/${userId}`,
+    JSON.stringify(updateData),
+    { headers }
+  );
+  
+  const passed = check(response, {
+    'update user: status is 200': (r) => r.status === 200,
+    'update user: has data': (r) => JSON.parse(r.body).data !== undefined,
+  });
+  
+  errorRate.add(!passed);
+  apiLatency.add(response.timings.duration);
+  
+  sleep(0.5);
+  
+  return response;
+}
+
+// Главный сценарий (user flow)
+export default function () {
+  // 1. Создаём пользователя
+  const createResponse = create_user();
+  
+  if (createResponse.status === 201) {
+    const userId = JSON.parse(createResponse.body).data.id;
+    
+    // 2. Получаем созданного пользователя
+    get_user(userId);
+    
+    // 3. Обновляем пользователя
+    update_user(userId);
+    
+    // 4. Снова получаем для проверки
+    get_user(userId);
+  }
+  
+  // 5. Получаем список пользователей
+  list_users(Math.floor(Math.random() * 5) + 1);
+}
+
+// Хуки
+export function handleSummary(data) {
+  return {
+    'load-tests/results/user-api-summary.json': JSON.stringify(data, null, 2),
+    stdout: textSummary(data, { indent: ' ', enableColors: true }),
+  };
+}
+
+function textSummary(data, options) {
+  const { indent = '', enableColors = false } = options;
+  
+  return `
+${indent}Load Test Summary:
+${indent}  Requests: ${data.metrics.http_reqs.values.count}
+${indent}  Request Rate: ${data.metrics.http_reqs.values.rate.toFixed(2)} req/s
+${indent}  Duration (p95): ${data.metrics.http_req_duration.values['p(95)'].toFixed(2)} ms
+${indent}  Failed Requests: ${(data.metrics.http_req_failed.values.rate * 100).toFixed(2)}%
+${indent}  Errors: ${(data.metrics.errors.rate * 100).toFixed(2)}%
+  `;
+}
+```
+
+**Запуск тестов:**
+```bash
+# Smoke тест (быстрая проверка)
+k6 run --tag test_type=smoke load-tests/user-api.js
+
+# Load тест (нагрузочный)
+k6 run --tag test_type=load load-tests/user-api.js
+
+# Stress тест (стресс-тест)
+k6 run --tag test_type=stress load-tests/user-api.js
+
+# С переменными окружения
+BASE_URL=http://localhost:8080 API_TOKEN=your-token k6 run load-tests/user-api.js
+
+# С выводом метрик в InfluxDB + Grafana
+k6 run --out influxdb=http://localhost:8086/k6 load-tests/user-api.js
+
+# Распределённый тест (cloud)
+k6 cloud load-tests/user-api.js
+```
+
+#### Apache Bench (ab)
+
+Простой инструмент для быстрых тестов.
+
+**Примеры:**
+```bash
+# 100 запросов, 10 одновременных
+ab -n 100 -c 10 -H "Authorization: Bearer your-token" \
+   -H "Accept: application/json" \
+   http://localhost:8080/api/users
+
+# 1000 запросов, 50 одновременных (POST)
+ab -n 1000 -c 50 -p create-user.json -T application/json \
+   -H "Authorization: Bearer your-token" \
+   http://localhost:8080/api/users
+
+# Тест с разными параметрами
+ab -n 500 -c 20 -H "Accept: application/json" \
+   "http://localhost:8080/api/users?page=1&per_page=15"
+```
+
+#### wrk
+
+Высокопроизводительный HTTP benchmarking инструмент.
+
+**Пример скрипта (load-tests/user-api.lua):**
+```lua
+wrk.method = "GET"
+wrk.url = "http://localhost:8080/api/users"
+wrk.headers["Accept"] = "application/json"
+wrk.headers["Authorization"] = "Bearer your-token"
+
+-- Кастомная логика
+done = function(summary, latency, requests)
+  io.write("Requests: ", summary.requests, "\n")
+  io.write("Latency (p50): ", latency:percentile(50), "ms\n")
+  io.write("Latency (p95): ", latency:percentile(95), "ms\n")
+  io.write("Latency (p99): ", latency:percentile(99), "ms\n")
+end
+```
+
+**Запуск:**
+```bash
+# 2 потока, 100 соединений, 30 секунд
+wrk -t2 -c100 -d30s -H "Authorization: Bearer your-token" \
+    http://localhost:8080/api/users
+
+# С Lua скриптом
+wrk -t4 -c200 -d60s -s load-tests/user-api.lua
+```
+
+**Интеграция с Composer:**
+```json
+{
+  "scripts": {
+    "load-test:smoke": "k6 run --tag test_type=smoke load-tests/user-api.js",
+    "load-test:load": "k6 run --tag test_type=load load-tests/user-api.js",
+    "load-test:stress": "k6 run --tag test_type=stress load-tests/user-api.js",
+    "load-test:all": [
+      "@load-test:smoke",
+      "@load-test:load",
+      "@load-test:stress"
+    ]
+  }
+}
+```
+
+**Запуск через Docker:**
+```bash
+# Запуск k6 в Docker
+docker run --rm --network host -v $(pwd):/scripts grafana/k6 run /scripts/load-tests/user-api.js
+
+# С переменными окружения
+docker run --rm --network host \
+  -e BASE_URL=http://host.docker.internal:8080 \
+  -e API_TOKEN=your-token \
+  -v $(pwd):/scripts \
+  grafana/k6 run /scripts/load-tests/user-api.js
+```
+
+**Пример отчёта:**
+```
+Load Test Summary:
+  Requests: 15234
+  Request Rate: 253.90 req/s
+  Duration (p50): 145.23 ms
+  Duration (p95): 423.67 ms
+  Duration (p99): 678.91 ms
+  Failed Requests: 0.12%
+  Errors: 0.08%
+
+Thresholds:
+  ✓ http_req_duration (p(50)<200)  ✓ passed
+  ✓ http_req_duration (p(90)<500)  ✓ passed
+  ✓ http_req_duration (p(95)<800)  ✓ passed
+  ✓ http_req_failed (rate<0.01)    ✓ passed
+  ✓ http_reqs (rate>100)           ✓ passed
+  ✓ errors (rate<0.01)             ✓ passed
+
+Result: PASS ✅
+```
+
+**Рекомендации:**
+1. Запускайте нагрузочные тесты на staging-окружении
+2. Используйте реалистичные сценарии (user flows)
+3. Мониторьте метрики БД и кэша во время тестов
+4. Устанавливайте реалистичные пороги (thresholds)
+5. Автоматизируйте запуск в CI/CD для критических эндпоинтов
+
 ---
 
 ## 10. Этапы реализации
@@ -1411,9 +2164,19 @@ final class AuthorizeResourceAccess
 
 ### Этап 9: Документация (Week 9)
 - [ ] README с примерами
-- [ ] API документация
+- [ ] API документация (OpenAPI/Swagger)
 - [ ] Архитектурные решения (ADR)
 - [ ] Примеры использования
+
+### Этап 10: Нагрузочное тестирование (Week 10)
+- [ ] Установка k6
+- [ ] Скрипты для основных эндпоинтов
+- [ ] Smoke тесты (быстрая проверка)
+- [ ] Load тесты (пиковая нагрузка)
+- [ ] Stress тесты (предельная нагрузка)
+- [ ] Настройка пороговых значений (thresholds)
+- [ ] Интеграция с CI/CD
+- [ ] Отчёты и метрики производительности
 
 ---
 
@@ -1439,6 +2202,10 @@ final class AuthorizeResourceAccess
 - [ ] Время ответа API < 200ms (p95)
 - [ ] Docker-окружение работает из коробки
 - [ ] CI/CD pipeline проходит успешно
+- [ ] **Нагрузочные тесты проходят все пороги (thresholds)**
+- [ ] **Smoke тест: 5 VUs, 30s без ошибок**
+- [ ] **Load тест: 100 VUs, p95 < 800ms**
+- [ ] **Stress тест: 300 req/s, error rate < 1%**
 
 ### 11.3. Документация
 - [ ] README с инструкцией по запуску
@@ -1447,12 +2214,14 @@ final class AuthorizeResourceAccess
 - [ ] Примеры кода для основных сценариев
 - [ ] Описание архитектуры
 - [ ] CI/CD конфигурация
+- [ ] **Документация по нагрузочному тестированию**
+- [ ] **Отчёты о производительности (smoke/load/stress)**
 
 ---
 
-## 12. Пример домена "User"
+## 13. Пример домена "User"
 
-### 12.1. Полная структура
+### 13.1. Полная структура
 
 ```
 Domains/User/
@@ -1502,7 +2271,7 @@ Domains/User/
         └── CreateUserCommand.php
 ```
 
-### 12.2. Примеры использования RBAC/ABAC
+### 13.2. Примеры использования RBAC/ABAC
 
 **Создание ролей и разрешений (Seeder):**
 ```php
@@ -1575,19 +2344,51 @@ final class UserController extends Controller
 
 ---
 
-## 13. Приложения
+## 14. Приложения
 
-### Приложение A: Ссылки на ресурсы
+### Приложение А: Нагрузочное тестирование
+
+**Команды для запуска:**
+```bash
+# Smoke тест (быстрая проверка)
+k6 run --tag test_type=smoke load-tests/user-api.js
+
+# Load тест (нагрузочный)
+k6 run --tag test_type=load load-tests/user-api.js
+
+# Stress тест (стресс-тест)
+k6 run --tag test_type=stress load-tests/user-api.js
+
+# Все тесты последовательно
+k6 run --tag test_type=smoke load-tests/user-api.js && \
+k6 run --tag test_type=load load-tests/user-api.js && \
+k6 run --tag test_type=stress load-tests/user-api.js
+```
+
+**Интерпретация результатов:**
+- **p50 < 200ms** — отлично, 50% запросов быстрее 200ms
+- **p95 < 500ms** — хорошо, 95% запросов быстрее 500ms
+- **p99 < 800ms** — приемлемо, 99% запросов быстрее 800ms
+- **Error rate < 1%** — целевой показатель ошибок
+
+**Оптимизация при проблемах:**
+1. Проверьте запросы к БД (N+1 проблема)
+2. Добавьте кэширование (Redis)
+3. Используйте индексы в БД
+4. Оптимизируйте тяжелые вычисления
+5. Настройте connection pool
+
+### Приложение Б: Ссылки на ресурсы
 
 - [Laravel Beyond CRUD](https://beyondcrud.com/)
 - [Spatie Laravel Data](https://spatie.be/docs/laravel-data)
 - [Spatie Event Sourcing](https://spatie.be/docs/laravel-event-sourcing)
-- [Spatie Laravel Permission](https://spatie.be/docs/laravel-permission/v7/introduction)
+- [Spatie Laravel Permission](https://spatie.be/docs/laravel-permission/v8/introduction)
 - [Domain-Driven Design](https://domainlanguage.com/ddd/)
 - [CQRS Pattern](https://martinfowler.com/bliki/CQRS.html)
 - [Event Sourcing](https://martinfowler.com/eaaDev/EventSourcing.html)
 
-### Приложение Б: Глоссарий
+### Приложение В: Глоссарий
 
 | Термин | Определение |
 |--------|-------------|
@@ -1610,7 +2411,7 @@ final class UserController extends Controller
 | MSI | Mutation Score Indicator — процент убитых мутаций |
 | Мутация | Искусственное изменение кода для проверки тестов |
 
-### Приложение В: Быстрый старт
+### Приложение Г: Быстрый старт
 
 **Быстрая установка проекта:**
 ```bash
@@ -1640,6 +2441,21 @@ docker-compose exec app composer test          # Тесты
 docker-compose exec app composer test:coverage # Тесты с покрытием
 docker-compose exec app composer type-coverage # Проверка типов
 docker-compose exec app composer infection     # Мутационное тестирование
+```
+
+**Нагрузочное тестирование:**
+```bash
+# Smoke тест (быстрая проверка)
+docker-compose exec app composer load-test:smoke
+
+# Load тест (нагрузочный)
+docker-compose exec app composer load-test:load
+
+# Stress тест (стресс-тест)
+docker-compose exec app composer load-test:stress
+
+# Все тесты последовательно
+docker-compose exec app composer load-test:all
 ```
 
 **Полезные Docker команды:**
@@ -1675,7 +2491,7 @@ docker-compose restart app
 ```
 
 **Что делает install.sh:**
-1. Создаёт Laravel 13 проект через `laravel.build` (с PostgreSQL, Redis, Mailpit)
+1. Создаёт Laravel 12 проект через `laravel.build` (с PostgreSQL, Redis, Mailpit)
 2. Устанавливает все пакеты через Docker
 3. **Заменяет Laravel Sail на Server Side Up Docker** (production-ready)
 4. Создаёт DDD структуру папок
@@ -1688,7 +2504,7 @@ docker-compose restart app
 
 ---
 
-**Версия документа:** 1.12  
-**Дата создания:** 2026-03-19  
-**Дата обновления:** 2026-03-19  
+**Версия документа:** 1.13
+**Дата создания:** 2026-03-19
+**Дата обновления:** 2026-03-20
 **Статус:** Черновик

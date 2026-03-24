@@ -5,7 +5,7 @@
 # Автоматическая установка проекта с архитектурой DDD + CQRS + Event Sourcing
 #
 # Использование:
-#   curl -sL https://raw.githubusercontent.com/your-repo/install.sh | bash -s -- project-name
+#   curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/install.sh | bash -s -- project-name
 #   # или
 #   bash install.sh project-name
 ################################################################################
@@ -50,65 +50,242 @@ log_info "Создание проекта: ${PROJECT_NAME}"
 log_info "Путь: ${PROJECT_DIR}"
 
 ################################################################################
-# Шаг 1: Создание Laravel проекта через Laravel Sail (без локального Composer)
+# Шаг 0: Выбор версии PHP
 ################################################################################
-log_info "Шаг 1/12: Создание Laravel проекта (через Laravel Sail)..."
+log_info "Выбор версии PHP..."
 
-# Используем Laravel Sail для создания проекта без локального Composer
-# Это создаст проект с Docker-окружением
-curl -s "https://laravel.build/${PROJECT_NAME}?with=pgsql,redis,meilisearch,mailpit" | bash
+# Проверяем, передана ли версия PHP как второй аргумент
+if [ -n "$2" ]; then
+    PHP_CHOICE="$2"
+else
+    echo ""
+    echo "Выберите версию PHP для установки:"
+    echo "  1) PHP 8.4 (Laravel 12.x, стабильная)"
+    echo "  2) PHP 8.5 (Laravel 13.x, новая)"
+    echo "  3) PHP 8.6 (Laravel 13.x, последняя)"
+    echo ""
+
+    # Проверяем, запущен ли скрипт в интерактивном режиме
+    if [ -t 0 ]; then
+        read -p "Введите номер (1-3): " PHP_CHOICE
+    else
+        # Неинтерактивный режим - используем PHP 8.4 по умолчанию
+        PHP_CHOICE="1"
+        log_info "Неинтерактивный режим, выбрана PHP 8.4 (по умолчанию)"
+    fi
+fi
+
+case $PHP_CHOICE in
+    1)
+        PHP_VERSION_TARGET="8.4"
+        LARAVEL_VERSION="^12.0"
+        SPATIE_DATA_VERSION="^4.0"
+        SPATIE_EVENT_SOURCING_VERSION="^7.0"
+        SPATIE_PERMISSION_VERSION="^7.0"
+        SAFECODE_VERSION="^2.0"
+        PEST_VERSION="^3.0"
+        PEST_PLUGIN_VERSION="^3.0"
+        INFECTION_VERSION="^0.29.0"
+        DOCKER_PHP_VERSION="8.6"
+        log_info "Выбрана PHP 8.4 + Laravel 12 (стабильная)"
+        ;;
+    2)
+        PHP_VERSION_TARGET="8.5"
+        LARAVEL_VERSION="^13.0"
+        SPATIE_DATA_VERSION="^4.0"
+        SPATIE_EVENT_SOURCING_VERSION="^7.0"
+        SPATIE_PERMISSION_VERSION="^7.0"
+        SAFECODE_VERSION="^2.0"
+        PEST_VERSION="^4.0"
+        PEST_PLUGIN_VERSION="^4.0"
+        INFECTION_VERSION="^0.30.0"
+        DOCKER_PHP_VERSION="8.6"
+        log_info "Выбрана PHP 8.5 + Laravel 13 (новая)"
+        ;;
+    3)
+        PHP_VERSION_TARGET="8.6"
+        LARAVEL_VERSION="^13.0"
+        SPATIE_DATA_VERSION="^4.0"
+        SPATIE_EVENT_SOURCING_VERSION="^7.0"
+        SPATIE_PERMISSION_VERSION="^7.0"
+        SAFECODE_VERSION="^2.0"
+        PEST_VERSION="^4.0"
+        PEST_PLUGIN_VERSION="^4.0"
+        INFECTION_VERSION="^0.30.0"
+        DOCKER_PHP_VERSION="8.6"
+        log_info "Выбрана PHP 8.6 + Laravel 13 (последняя)"
+        ;;
+    *)
+        log_error "Неверный выбор. Используется PHP 8.4 по умолчанию."
+        PHP_VERSION_TARGET="8.4"
+        LARAVEL_VERSION="^12.0"
+        SPATIE_DATA_VERSION="^4.0"
+        SPATIE_EVENT_SOURCING_VERSION="^7.0"
+        SPATIE_PERMISSION_VERSION="^7.0"
+        SAFECODE_VERSION="^2.0"
+        PEST_VERSION="^3.0"
+        PEST_PLUGIN_VERSION="^3.0"
+        INFECTION_VERSION="^0.29.0"
+        DOCKER_PHP_VERSION="8.6"
+        ;;
+esac
+
+log_info "Целевая версия PHP: ${PHP_VERSION_TARGET}"
+log_info "Целевая версия Laravel: ${LARAVEL_VERSION}"
+
+################################################################################
+# Шаг 1: Проверка и установка PHP и Composer
+################################################################################
+log_info "Шаг 1/13: Проверка PHP и Composer..."
+
+PHP_INSTALLED=false
+COMPOSER_INSTALLED=false
+
+# Проверка PHP
+if command -v php &> /dev/null; then
+    PHP_VERSION=$(php -v | head -n 1 | cut -d ' ' -f 2 | cut -d '.' -f 1,2)
+    log_info "PHP найден: версия $PHP_VERSION"
+
+    # Проверка минимальной версии (8.4+)
+    if [ "$(printf '%s\n' "8.4" "$PHP_VERSION" | sort -V | head -n 1)" = "8.4" ]; then
+        PHP_INSTALLED=true
+    else
+        log_warning "PHP версия $PHP_VERSION ниже требуемой (8.4+)"
+    fi
+else
+    log_warning "PHP не найден"
+fi
+
+# Проверка Composer
+if command -v composer &> /dev/null; then
+    COMPOSER_INSTALLED=true
+    log_info "Composer найден"
+else
+    log_warning "Composer не найден"
+fi
+
+# Установка PHP и Composer если не установлены
+if [ "$PHP_INSTALLED" = false ] || [ "$COMPOSER_INSTALLED" = false ]; then
+    log_info "Требуется установка недостающих компонентов..."
+
+    # Запрос пароля sudo
+    log_info "Запрос прав sudo для установки..."
+    sudo -v || {
+        log_error "Не удалось получить права sudo"
+        exit 1
+    }
+
+    # Установка PHP
+    if [ "$PHP_INSTALLED" = false ]; then
+        log_info "Установка PHP ${PHP_VERSION_TARGET}..."
+
+        # Определение дистрибутива
+        if [ -f /etc/debian_version ] || [ -f /etc/ubuntu-version ]; then
+            # Debian/Ubuntu
+            sudo apt-get update
+            sudo apt-get install -y software-properties-common
+            sudo add-apt-repository ppa:ondrej/php -y
+            sudo apt-get update
+            sudo apt-get install -y php${PHP_VERSION_TARGET} php${PHP_VERSION_TARGET}-cli php${PHP_VERSION_TARGET}-pgsql \
+                php${PHP_VERSION_TARGET}-xml php${PHP_VERSION_TARGET}-mbstring php${PHP_VERSION_TARGET}-curl php${PHP_VERSION_TARGET}-zip php${PHP_VERSION_TARGET}-bcmath \
+                php${PHP_VERSION_TARGET}-redis php${PHP_VERSION_TARGET}-intl
+        elif [ -f /etc/redhat-release ] || [ -f /etc/centos-release ]; then
+            # RHEL/CentOS
+            sudo dnf install -y https://rpms.remirepo.net/enterprise/remi-release-8.rpm
+            sudo dnf module install -y php:remi-${PHP_VERSION_TARGET}
+            sudo dnf install -y php php-cli php-pgsql php-xml php-mbstring \
+                php-curl php-zip php-bcmath php-redis php-intl
+        elif [ -f /etc/arch-release ]; then
+            # Arch Linux
+            sudo pacman -Syu --noconfirm php php-pgsql php-intl
+        else
+            log_error "Неподдерживаемый дистрибутив Linux"
+            log_info "Пожалуйста, установите PHP ${PHP_VERSION_TARGET}+ вручную"
+            exit 1
+        fi
+
+        PHP_INSTALLED=true
+        log_success "PHP установлен"
+    fi
+
+    # Установка Composer
+    if [ "$COMPOSER_INSTALLED" = false ]; then
+        log_info "Установка Composer..."
+
+        curl -sS https://getcomposer.org/installer | sudo php -- --install-dir=/usr/local/bin --filename=composer
+
+        COMPOSER_INSTALLED=true
+        log_success "Composer установлен"
+    fi
+fi
+
+# Финальная проверка
+if [ "$PHP_INSTALLED" = false ]; then
+    log_error "Не удалось установить PHP"
+    exit 1
+fi
+
+if [ "$COMPOSER_INSTALLED" = false ]; then
+    log_error "Не удалось установить Composer"
+    exit 1
+fi
+
+log_success "PHP и Composer готовы к работе"
+
+################################################################################
+# Шаг 2: Создание Laravel проекта
+################################################################################
+log_info "Шаг 2/13: Создание Laravel проекта..."
+
+# Создаём проект через composer create-project (официальный способ Laravel)
+composer create-project "laravel/laravel:${LARAVEL_VERSION}" "${PROJECT_NAME}" --prefer-dist
 
 cd "${PROJECT_DIR}" || exit 1
 
 log_success "Laravel проект создан"
 
 ################################################################################
-# Шаг 2: Установка основных пакетов через Docker
+# Шаг 3: Установка основных пакетов
 ################################################################################
-log_info "Шаг 2/12: Установка основных пакетов..."
+log_info "Шаг 3/13: Установка основных пакетов..."
 
-# Запускаем контейнеры для установки зависимостей
-./vendor/bin/sail up -d
-
-# Ждём готовности контейнера
-log_info "Ожидание готовности контейнеров..."
-sleep 10
-
-# Устанавливаем пакеты через Sail
-./vendor/bin/sail composer require \
-    laravel/framework:^13.0 \
-    spatie/laravel-data:^4.0 \
-    spatie/laravel-event-sourcing:^10.0 \
-    spatie/laravel-permission:^7.0 \
-    thecodingmachine/safe:^2.0 \
+composer require \
+    "laravel/framework:${LARAVEL_VERSION}" \
+    "spatie/laravel-data:${SPATIE_DATA_VERSION}" \
+    "spatie/laravel-event-sourcing:${SPATIE_EVENT_SOURCING_VERSION}" \
+    "spatie/laravel-permission:${SPATIE_PERMISSION_VERSION}" \
+    "thecodingmachine/safe:${SAFECODE_VERSION}" \
     --no-interaction
 
 log_success "Основные пакеты установлены"
 
 ################################################################################
-# Шаг 3: Установка dev-зависимостей через Docker
+# Шаг 4: Установка dev-зависимостей
 ################################################################################
-log_info "Шаг 3/12: Установка dev-зависимостей..."
+log_info "Шаг 4/13: Установка dev-зависимостей..."
 
-./vendor/bin/sail composer require --dev \
+# Разрешаем плагины
+composer config allow-plugins.infection/extension-installer true
+composer config allow-plugins.pestphp/pest-plugin true
+
+composer require --dev \
     laravel/pint:^1.0 \
     phpstan/phpstan:^2.0 \
     phpstan/phpstan-strict-rules:^2.0 \
     phpstan/phpstan-phpunit:^2.0 \
-    pestphp/pest:^3.0 \
-    pestphp/pest-plugin-laravel:^3.0 \
-    pestphp/pest-plugin-type-coverage:^3.0 \
-    infection/infection:^0.29.0 \
-    infection/phpstan-adapter:^0.29.0 \
-    infection/pest-adapter:^0.29.0 \
-    --no-interaction
+    "pestphp/pest:${PEST_VERSION}" \
+    "pestphp/pest-plugin-laravel:${PEST_PLUGIN_VERSION}" \
+    "pestphp/pest-plugin-type-coverage:${PEST_PLUGIN_VERSION}" \
+    "infection/infection:${INFECTION_VERSION}" \
+    darkaonline/l5-swagger:^2.0 \
+    --no-interaction --with-all-dependencies
 
 log_success "Dev-зависимости установлены"
 
 ################################################################################
-# Шаг 4: Создание структуры доменов
+# Шаг 5: Создание структуры доменов
 ################################################################################
-log_info "Шаг 4/12: Создание структуры доменов..."
+log_info "Шаг 5/13: Создание структуры доменов..."
 
 mkdir -p src/Domains/User/Application/Commands
 mkdir -p src/Domains/User/Application/Queries
@@ -128,22 +305,16 @@ mkdir -p src/Domains/User/Interfaces/CLI
 log_success "Структура доменов создана"
 
 ################################################################################
-# Шаг 5: Замена Laravel Sail на Server Side Up Docker
+# Шаг 6: Создание Docker-окружения (Server Side Up)
 ################################################################################
-log_info "Шаг 5/13: Замена Sail на Server Side Up Docker..."
-
-# Останавливаем Sail контейнеры
-./vendor/bin/sail stop 2>/dev/null || true
-
-# Удаляем docker-compose.yml от Sail
-rm -f docker-compose.yml
+log_info "Шаг 6/13: Создание Docker-окружения (Server Side Up)..."
 
 # Создаём директорию для Dockerfile
 mkdir -p docker/php
 
 # Dockerfile от Server Side Up
-cat > docker/php/Dockerfile << 'DOCKERFILE'
-FROM serversideup/php:8.5-fpm-nginx
+cat > docker/php/Dockerfile << DOCKERFILE
+FROM serversideup/php:${DOCKER_PHP_VERSION}-fpm-nginx
 
 # Установка расширений PHP
 USER root
@@ -165,11 +336,11 @@ USER www-data
 DOCKERFILE
 
 # docker-compose.yml для Server Side Up
-cat > docker-compose.yml << 'DOCKERCOMPOSE'
+cat > docker-compose.yml << DOCKERCOMPOSE
 version: '3.8'
 services:
   app:
-    image: serversideup/php:8.5-fpm-nginx
+    image: serversideup/php:${DOCKER_PHP_VERSION}-fpm-nginx
     volumes:
       - .:/var/www/html
     depends_on:
@@ -203,11 +374,11 @@ services:
       - "8080:80"
 
   db:
-    image: postgres:15
+    image: postgres:17
     environment:
       POSTGRES_DB: app
       POSTGRES_USER: app
-      POSTGRES_PASSWORD: secret
+      POSTGRES_PASSWORD=secret
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -219,7 +390,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     ports:
       - "6379:6379"
     healthcheck:
@@ -249,15 +420,12 @@ bootstrap/cache/*
 !bootstrap/.gitignore
 DOCKERIGNORE
 
-# Удаляем лишние файлы Sail
-rm -f docker-compose.override.yml 2>/dev/null || true
-
-log_success "Server Side Up Docker настроен"
+log_success "Docker-окружение создано"
 
 ################################################################################
-# Шаг 6: Создание конфигурационных файлов
+# Шаг 7: Создание конфигурационных файлов
 ################################################################################
-log_info "Шаг 6/13: Создание конфигурационных файлов..."
+log_info "Шаг 7/13: Создание конфигурационных файлов..."
 
 # pint.json
 cat > pint.json << 'PINTJSON'
@@ -320,35 +488,77 @@ cat > infection.json5 << 'INFECTIONJSON'
 }
 INFECTIONJSON
 
-# .env (копируем из .env.example и добавляем наши переменные)
+# l5-swagger.php
+mkdir -p config
+cat > config/l5-swagger.php << 'L5SWAGGER'
+<?php
+
+return [
+    'default' => 'default',
+    'documentations' => [
+        'default' => [
+            'api' => [
+                'title' => 'Laravel DDD API',
+            ],
+            'routes' => [
+                'api' => 'api/documentation',
+            ],
+            'oauth' => [
+                'enabled' => false,
+            ],
+            'swagger-ui' => [
+                'enabled' => true,
+                'ui' => [
+                    'docExpansion' => 'none',
+                    'operationsSorter' => 'alpha',
+                ],
+            ],
+        ],
+    ],
+    'defaults' => [
+        'paths' => [
+            'docs' => storage_path('api-docs'),
+            'views' => base_path('resources/views/vendor/l5-swagger'),
+        ],
+    ],
+];
+L5SWAGGER
+
+log_success "Конфигурационные файлы созданы"
+
+################################################################################
+# Шаг 8: Настройка .env
+################################################################################
+log_info "Шаг 8/13: Настройка окружения..."
+
+# Копируем .env.example в .env
 cp .env.example .env
 
-# Генерируем ключ через docker-compose
-docker-compose up -d
-log_info "Ожидание готовности контейнеров..."
-sleep 15
+# Генерируем APP_KEY
+php artisan key:generate
 
-docker-compose exec -T app php artisan key:generate
-
-# Добавляем переменные для Server Side Up автоматизаций
-cat >> .env << ENVVARS
+# Добавляем переменные для Server Side Up и нагрузочного тестирования
+cat >> .env << 'ENVVARS'
 
 # Server Side Up
 AUTOBOOT=true
 AUTOBOOT_RUN_MIGRATIONS=true
 HORIZON_ENABLED=true
 SCHEDULER_ENABLED=true
+
+# Load Testing
+LOAD_TEST_BASE_URL=http://localhost:8080
 ENVVARS
 
-log_success "Конфигурационные файлы созданы"
+log_success "Окружение настроено"
 
 ################################################################################
-# Шаг 7: Обновление composer.json скриптов
+# Шаг 9: Обновление composer.json скриптов
 ################################################################################
-log_info "Шаг 7/13: Настройка composer скриптов..."
+log_info "Шаг 9/13: Настройка composer скриптов..."
 
-# Читаем текущий composer.json и добавляем скрипты через docker-compose
-docker-compose exec -T app php -r '
+# Читаем текущий composer.json и добавляем скрипты
+php -r '
 $composer = json_decode(file_get_contents("composer.json"), true);
 $composer["scripts"]["pint"] = "pint";
 $composer["scripts"]["pint:test"] = "pint --test";
@@ -357,6 +567,10 @@ $composer["scripts"]["test"] = "pest";
 $composer["scripts"]["test:coverage"] = "pest --coverage --min=80";
 $composer["scripts"]["type-coverage"] = "pest --type-coverage --min=90";
 $composer["scripts"]["infection"] = "infection --min-msi=90 --min-covered-msi=90";
+$composer["scripts"]["load-test:smoke"] = "k6 run --tag test_type=smoke load-tests/user-api.js";
+$composer["scripts"]["load-test:load"] = "k6 run --tag test_type=load load-tests/user-api.js";
+$composer["scripts"]["load-test:stress"] = "k6 run --tag test_type=stress load-tests/user-api.js";
+$composer["scripts"]["load-test:all"] = ["@load-test:smoke", "@load-test:load", "@load-test:stress"];
 $composer["scripts"]["qa"] = ["@pint:test", "@phpstan", "@test:coverage", "@type-coverage", "@infection"];
 $composer["scripts"]["qa:fast"] = ["@pint:test", "@phpstan", "@test:coverage", "@type-coverage"];
 file_put_contents("composer.json", json_encode($composer, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
@@ -365,9 +579,9 @@ file_put_contents("composer.json", json_encode($composer, JSON_PRETTY_PRINT | JS
 log_success "Composer скрипты настроены"
 
 ################################################################################
-# Шаг 8: Создание примера домена User
+# Шаг 10: Создание примера домена User
 ################################################################################
-log_info "Шаг 8/12: Создание примера домена User..."
+log_info "Шаг 10/13: Создание примера домена User..."
 
 # Command DTO - CreateUserCommand
 cat > src/Domains/User/Application/Commands/CreateUserCommand.php << 'PHP'
@@ -810,22 +1024,43 @@ PHP
 log_success "Пример домена User создан"
 
 ################################################################################
-# Шаг 9: Создание миграций
+# Шаг 11: Создание миграций и настройка маршрутов
 ################################################################################
-log_info "Шаг 9/13: Создание миграций..."
+log_info "Шаг 11/13: Создание миграций и маршрутов..."
 
-docker-compose exec -T app php artisan make:migration create_users_table
-docker-compose exec -T app php artisan make:migration create_permission_tables
-docker-compose exec -T app php artisan make:migration create_projected_events_table
-docker-compose exec -T app php artisan make:migration create_stored_events_table
+# Создаём миграцию users
+cat > database/migrations/2024_01_01_000000_create_users_table.php << 'PHP'
+<?php
 
-log_success "Миграции созданы"
+declare(strict_types=1);
 
-################################################################################
-# Шаг 10: Настройка маршрутов
-################################################################################
-log_info "Шаг 10/12: Настройка маршрутов..."
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('users', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->string('email')->unique();
+            $table->string('name');
+            $table->string('phone')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('users');
+    }
+};
+PHP
+
+# Добавляем маршруты
 cat >> routes/api.php << 'ROUTES'
 
 // User routes
@@ -839,12 +1074,12 @@ Route::prefix('users')->group(function () {
 });
 ROUTES
 
-log_success "Маршруты настроены"
+log_success "Миграции и маршруты созданы"
 
 ################################################################################
-# Шаг 11: Создание тестов
+# Шаг 12: Создание тестов
 ################################################################################
-log_info "Шаг 11/12: Создание тестов..."
+log_info "Шаг 12/13: Создание тестов..."
 
 mkdir -p tests/Integration/Domains/User/Commands
 
@@ -880,12 +1115,14 @@ PHP
 log_success "Тесты созданы"
 
 ################################################################################
-# Шаг 12: Создание GitHub Actions workflow
+# Шаг 13: Создание GitHub Actions workflow и load-тестов
 ################################################################################
-log_info "Шаг 12/12: Настройка CI/CD..."
+log_info "Шаг 13/13: Настройка CI/CD и нагрузочных тестов..."
 
 mkdir -p .github/workflows
+mkdir -p load-tests/results
 
+# GitHub Actions CI/CD
 cat > .github/workflows/ci.yml << 'YAML'
 name: CI
 
@@ -930,7 +1167,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.5'
+          php-version: '8.3'
           extensions: pgsql, redis
           coverage: xdebug
           tools: infection
@@ -987,7 +1224,76 @@ SESSION_DRIVER=redis
 QUEUE_CONNECTION=redis
 ENVCI
 
-log_success "CI/CD настроен"
+# Load test script (k6)
+cat > load-tests/user-api.js << 'K6JS'
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+import { Rate, Trend } from 'k6/metrics';
+
+const errorRate = new Rate('errors');
+const apiLatency = new Trend('api_latency');
+
+export const options = {
+  scenarios: {
+    smoke: {
+      executor: 'constant-vus',
+      vus: 5,
+      duration: '30s',
+      gracefulStop: '5s',
+      tags: { test_type: 'smoke' },
+    },
+    load: {
+      executor: 'ramping-vus',
+      startVUs: 0,
+      stages: [
+        { duration: '30s', target: 50 },
+        { duration: '1m', target: 50 },
+        { duration: '30s', target: 100 },
+        { duration: '1m', target: 100 },
+        { duration: '30s', target: 0 },
+      ],
+      gracefulRampDown: '10s',
+      tags: { test_type: 'load' },
+      startTime: '35s',
+    },
+  },
+  thresholds: {
+    http_req_duration: ['p(50)<200', 'p(90)<500', 'p(95)<800'],
+    http_req_failed: ['rate<0.01'],
+    errors: ['rate<0.01'],
+  },
+};
+
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
+const API_TOKEN = __ENV.API_TOKEN || 'test-token';
+
+const headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'Authorization': `Bearer ${API_TOKEN}`,
+};
+
+export default function () {
+  const response = http.get(`${BASE_URL}/api/users`, { headers });
+  
+  check(response, {
+    'list users: status is 200': (r) => r.status === 200,
+  });
+  
+  errorRate.add(response.status !== 200);
+  apiLatency.add(response.timings.duration);
+  
+  sleep(1);
+}
+
+export function handleSummary(data) {
+  return {
+    'load-tests/results/user-api-summary.json': JSON.stringify(data, null, 2),
+  };
+}
+K6JS
+
+log_success "CI/CD и нагрузочные тесты настроены"
 
 ################################################################################
 # Завершение
@@ -1002,18 +1308,23 @@ echo ""
 echo "1. Перейдите в директорию проекта:"
 echo "   cd ${PROJECT_NAME}"
 echo ""
-echo "2. Запустите Docker контейнеры (Server Side Up):"
+echo "2. Запустите Docker контейнеры:"
 echo "   docker-compose up -d"
 echo ""
 echo "3. Запустите миграции:"
 echo "   docker-compose exec app php artisan migrate"
 echo ""
 echo "4. Запустите все проверки качества:"
-echo "   docker-compose exec app composer qa"
+echo "   composer qa"
 echo ""
-echo "5. Или быстрая проверка (без мутационного тестирования):"
-echo "   docker-compose exec app composer qa:fast"
+echo "5. Или быстрая проверка:"
+echo "   composer qa:fast"
+echo ""
+echo "6. Нагрузочные тесты:"
+echo "   composer load-test:smoke"
+echo "   composer load-test:load"
+echo "   composer load-test:stress"
 echo ""
 log_info "Документация: README.md"
-log_info "Docker команды: docker-compose exec app <command>"
+log_info "Swagger UI: http://localhost:8080/api/documentation"
 echo ""
