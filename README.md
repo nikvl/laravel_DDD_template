@@ -3,7 +3,7 @@
 > **Автоматическая установка через Docker (не требует локального PHP/Composer):**
 > ```bash
 > # Быстрый старт через curl (рекомендуется)
-> curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/install.sh | bash -s -- my-project
+> curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/main/install.sh | bash -s -- my-project 3
 >
 > # Или вручную с выбором PHP версии
 > bash install.sh my-project          # Интерактивный режим
@@ -37,13 +37,8 @@
 ### Быстрый старт
 
 ```bash
-# 1. Создание проекта через curl (рекомендуется)
-curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/install.sh | bash -s -- my-project
-
-# Или через git clone
-git clone https://github.com/nikvl/laravel_DDD_template.git my-project
-cd my-project
-bash install.sh my-project
+# 1. Установка через curl (рекомендуется)
+curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/main/install.sh | bash -s -- my-project 3
 
 # 2. Перейдите в директорию проекта
 cd my-project
@@ -713,46 +708,49 @@ final class UserController extends Controller
 
 **Пример команды-обработчика (Command Handler):**
 ```php
-namespace Domains\User\Application\Commands;
+namespace Domains\User\Application\Handlers;
 
-use Domains\User\Domain\Aggregates\UserAggregate;
-use Spatie\EventSourcing\Commands\CommandHandler;
+use Domains\User\Application\Commands\CreateUserCommand;
+use Domains\User\Infrastructure\Eloquent\UserModel;
 
-final class CreateUserCommandHandler implements CommandHandler
+final class CreateUserCommandHandler
 {
     public function __invoke(CreateUserCommand $command): string
     {
-        $userId = \Str::uuid();
+        // UserModel использует трейт HasUuids для автогенерации UUID
+        $user = UserModel::create([
+            'email' => $command->email,
+            'name' => $command->name,
+            'phone' => $command->phone,
+        ]);
 
-        UserAggregate::create(
-            $userId,
-            $command->email,
-            $command->name,
-        )->persist();
-
-        return $userId;
+        return $user->id;
     }
 }
 ```
 
 **Пример команды-обработчика для обновления:**
 ```php
-namespace Domains\User\Application\Commands;
+namespace Domains\User\Application\Handlers;
 
-use Domains\User\Domain\Aggregates\UserAggregate;
-use Spatie\EventSourcing\Commands\CommandHandler;
+use Domains\User\Application\Commands\UpdateUserCommand;
+use Domains\User\Infrastructure\Eloquent\UserModel;
 
-final class UpdateUserCommandHandler implements CommandHandler
+final class UpdateUserCommandHandler
 {
     public function __invoke(UpdateUserCommand $command): string
     {
-        UserAggregate::retrieve($command->userId)
-            ->update(
-                email: $command->email,
-                name: $command->name,
-                phone: $command->phone,
-            )
-            ->persist();
+        $user = UserModel::find($command->userId);
+        
+        if ($user === null) {
+            throw new \RuntimeException("User not found: {$command->userId}");
+        }
+
+        $user->update([
+            'email' => $command->email ?? $user->email,
+            'name' => $command->name ?? $user->name,
+            'phone' => $command->phone ?? $user->phone,
+        ]);
 
         return $command->userId;
     }
@@ -2339,124 +2337,9 @@ Result: PASS ✅
 
 ---
 
-## 10. Этапы реализации
+## 10. Пример домена "User"
 
-### Этап 1: Базовая структура (Week 1)
-- [ ] Настройка Docker-окружения (PostgreSQL, Redis)
-- [ ] Установка Laravel и базовых пакетов
-- [ ] Создание структуры доменов
-- [ ] Настройка Laravel Pint
-- [ ] Настройка PHPStan (level 9)
-- [ ] Настройка Pest с coverage
-
-### Этап 2: DDD Core (Week 2)
-- [ ] Реализация базовых классов домена
-- [ ] Value Objects
-- [ ] Entities и Aggregates
-- [ ] Domain Events
-
-### Этап 3: CQRS (Week 3)
-- [ ] Command Bus
-- [ ] Query Bus
-- [ ] Обработчики команд
-- [ ] Обработчики запросов
-
-### Этап 4: Event Sourcing (Week 4)
-- [ ] Интеграция spatie/laravel-event-sourcing
-- [ ] Projectors
-- [ ] Reactors
-- [ ] Snapshotting
-
-### Этап 5: Spatie DTO (Week 5)
-- [ ] Интеграция spatie/laravel-data
-- [ ] DTO для всех доменов
-- [ ] Валидация на уровне DTO
-- [ ] Transformers
-
-### Этап 6: RBAC/ABAC (Week 6)
-- [ ] Интеграция spatie/laravel-permission
-- [ ] Роли и разрешения
-- [ ] Policy классы
-- [ ] Gate и ABAC логика
-- [ ] Middleware для авторизации
-
-### Этап 7: API Interface (Week 7)
-- [ ] Controllers
-- [ ] DTO с валидацией (Command DTO)
-- [ ] Response DTO для ответов
-- [ ] OpenAPI документация
-- [ ] API аутентификация (Sanctum)
-
-### Этап 8: Тестирование и CI/CD (Week 8)
-- [ ] Unit-тесты (domain logic)
-- [ ] Integration-тесты (commands, queries)
-- [ ] E2E-тесты (HTTP endpoints)
-- [ ] Настройка GitHub Actions
-- [ ] Проверка coverage (≥80%)
-- [ ] Проверка type coverage (≥90%)
-- [ ] Настройка Infection (мутационное тестирование)
-- [ ] Проверка MSI (≥90%)
-
-### Этап 9: Документация (Week 9)
-- [ ] README с примерами
-- [ ] API документация (OpenAPI/Swagger)
-- [ ] Архитектурные решения (ADR)
-- [ ] Примеры использования
-
-### Этап 10: Нагрузочное тестирование (Week 10)
-- [ ] Установка k6
-- [ ] Скрипты для основных эндпоинтов
-- [ ] Smoke тесты (быстрая проверка)
-- [ ] Load тесты (пиковая нагрузка)
-- [ ] Stress тесты (предельная нагрузка)
-- [ ] Настройка пороговых значений (thresholds)
-- [ ] Интеграция с CI/CD
-- [ ] Отчёты и метрики производительности
-
----
-
-## 11. Критерии приемки
-
-### 11.1. Функциональные
-- [ ] Все команды выполняются корректно
-- [ ] Все запросы возвращают данные
-- [ ] Event Sourcing работает корректно
-- [ ] Read-модели обновляются проекторами
-- [ ] RBAC работает через spatie/laravel-permission
-- [ ] ABAC политики применяются корректно
-- [ ] API возвращает JSON ответы
-- [ ] PostgreSQL используется как основное хранилище
-- [ ] Redis используется для кэша и очередей
-
-### 11.2. Нефункциональные
-- [ ] Laravel Pint проходит без ошибок (100% кода)
-- [ ] PHPStan level 9 без ошибок (baseline запрещён)
-- [ ] Покрытие тестами ≥ 80%
-- [ ] Покрытие типами (type coverage) ≥ 90%
-- [ ] Мутационное тестирование (MSI) ≥ 90%
-- [ ] Время ответа API < 200ms (p95)
-- [ ] Docker-окружение работает из коробки
-- [ ] CI/CD pipeline проходит успешно
-- [ ] **Нагрузочные тесты проходят все пороги (thresholds)**
-- [ ] **Smoke тест: 5 VUs, 30s без ошибок**
-- [ ] **Load тест: 100 VUs, p95 < 800ms**
-- [ ] **Stress тест: 300 req/s, error rate < 1%**
-
-### 11.3. Документация
-- [ ] README с инструкцией по запуску
-- [ ] API документация (OpenAPI/Swagger)
-- [ ] Примеры авторизации и разрешений
-- [ ] Примеры кода для основных сценариев
-- [ ] Описание архитектуры
-- [ ] CI/CD конфигурация
-- [ ] **Документация по нагрузочному тестированию**
-- [ ] **Отчёты о производительности (smoke/load/stress)**
-
----
-
-## 13. Пример домена "User"
-
-### 13.1. Полная структура
+### 10.1. Полная структура
 
 ```
 Domains/User/
@@ -2506,7 +2389,7 @@ Domains/User/
         └── CreateUserCommand.php
 ```
 
-### 13.2. Примеры использования RBAC/ABAC
+### 10.2. Примеры использования RBAC/ABAC
 
 **Создание ролей и разрешений (Seeder):**
 ```php
@@ -2579,7 +2462,7 @@ final class UserController extends Controller
 
 ---
 
-## 14. Приложения
+## 11. Приложения
 
 ### Приложение А: Нагрузочное тестирование
 
