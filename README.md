@@ -1,30 +1,89 @@
 # Laravel API DDD Template
 
-> **Автоматическая установка (не требует локального PHP/Composer):**
+> **Автоматическая установка через Docker (не требует локального PHP/Composer):**
 > ```bash
-> # Быстрый старт
+> # Быстрый старт через curl (рекомендуется)
 > curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/install.sh | bash -s -- my-project
-> 
-> # Или вручную
-> git clone https://github.com/nikvl/laravel_DDD_template.git my-project
-> cd my-project
-> bash install.sh my-project
+>
+> # Или вручную с выбором PHP версии
+> bash install.sh my-project          # Интерактивный режим
+> bash install.sh my-project 3        # Неинтерактивный (PHP 8.5)
 > ```
 >
+> **Доступные версии PHP:**
+> - `1` — PHP 8.3 + Laravel 11 (стабильная)
+> - `2` — PHP 8.4 + Laravel 12 (новая)
+> - `3` — PHP 8.5 + Laravel 13 (последняя)
+>
 > **Что делает скрипт:**
-> 1. Создаёт Laravel 12 проект через `laravel.build` (не нужен локальный Composer)
-> 2. Устанавливает все пакеты через Docker
-> 3. **Заменяет Laravel Sail на Server Side Up Docker** (production-ready)
-> 4. Создаёт DDD структуру, конфигурационные файлы, пример домена
-> 5. Настраивает CI/CD, тесты, миграции
+> 1. Проверяет/устанавливает выбранную версию PHP
+> 2. Создаёт Laravel проект через Composer
+> 3. Устанавливает все пакеты (Spatie, Pest, PHPStan, Infection, swagger-php)
+> 4. Создаёт DDD структуру с примером домена User
+> 5. Настраивает Docker Compose (Server Side Up)
+> 6. Запускает Docker контейнеры
+> 7. Выполняет проверки качества (PHPStan, Pest) внутри контейнера
+> 8. **Удаляет локальный PHP** (все дальнейшие команды в контейнере)
 >
 > **Server Side Up Docker преимущества:**
 > - ✅ Автоматические миграции при деплое (AUTOBOOT)
 > - ✅ Встроенная поддержка Horizon и Scheduler
 > - ✅ Health checks из коробки
 > - ✅ Оптимизирован для production
+> - ✅ Все переменные из .env файла
 
 ## Описание проекта
+
+### Быстрый старт
+
+```bash
+# 1. Создание проекта через curl (рекомендуется)
+curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/install.sh | bash -s -- my-project
+
+# Или через git clone
+git clone https://github.com/nikvl/laravel_DDD_template.git my-project
+cd my-project
+bash install.sh my-project
+
+# 2. Перейдите в директорию проекта
+cd my-project
+
+# 3. Docker контейнеры уже запущены! Проверьте статус:
+docker compose ps
+
+# 4. Запустите миграции (если не выполнены автоматически):
+docker compose exec app php artisan migrate
+
+# 5. Откройте Swagger UI:
+# http://localhost:8080/api/documentation
+
+# 6. Сгенерируйте Swagger документацию:
+docker compose exec app composer swagger
+
+# 7. Запустите тесты:
+docker compose exec app composer test
+```
+
+**Команды для управления проектом:**
+```bash
+# Остановить контейнеры
+docker compose down
+
+# Запустить контейнеры
+docker compose up -d
+
+# Просмотр логов
+docker compose logs -f app
+
+# Войти в контейнер
+docker compose exec app bash
+
+# Запустить artisan команды
+docker compose exec app php artisan <command>
+
+# Запустить composer команды
+docker compose exec app composer <command>
+```
 
 ---
 
@@ -110,9 +169,9 @@ src/
 └── Domains/
     └── [DomainName]/
         ├── Application/
-        │   ├── Commands/       # Command DTO + Command Handlers
-        │   ├── Queries/        # Query DTO + Query Handlers
-        │   └── Services/
+        │   ├── Commands/       # Command DTO
+        │   ├── Queries/        # Query DTO
+        │   └── Handlers/       # Command Handlers + Query Handlers
         ├── Domain/
         │   ├── Entities/
         │   ├── ValueObjects/
@@ -122,12 +181,47 @@ src/
         ├── Infrastructure/
         │   ├── Persistence/
         │   ├── Eloquent/
-        │   └── External/
+        │   └── Projection/
         └── Interfaces/
             ├── Http/
             │   ├── Controllers/
             │   └── DTOs/       # Response DTO
             └── CLI/
+```
+
+**Пример структуры домена User:**
+```
+src/Domains/User/
+├── Application/
+│   ├── Commands/
+│   │   ├── CreateUserCommand.php
+│   │   └── UpdateUserCommand.php
+│   ├── Queries/
+│   │   ├── GetUserQuery.php
+│   │   └── ListUsersQuery.php
+│   └── Handlers/
+│       ├── CreateUserCommandHandler.php
+│       ├── UpdateUserCommandHandler.php
+│       ├── GetUserQueryHandler.php
+│       └── ListUsersQueryHandler.php
+├── Domain/
+│   ├── Aggregates/
+│   │   └── UserAggregate.php
+│   └── Events/
+│       └── UserCreated.php
+├── Infrastructure/
+│   ├── Eloquent/
+│   │   └── UserModel.php
+│   └── Projection/
+│       └── UserProjector.php
+└── Interfaces/
+    ├── Http/
+    │   ├── Controllers/
+    │   │   └── UserController.php
+    │   └── DTOs/
+    │       ├── UserResponseDTO.php
+    │       └── UserListResponseDTO.php
+    └── CLI/
 ```
 
 ### 3.2. Слои архитектуры
@@ -185,63 +279,167 @@ final class UserAggregate extends AggregateRoot
 - Разделение команд (изменение состояния) и запросов (чтение)
 - Команды возвращают только ID или void
 - Запросы возвращают DTO/Resource
-- Отдельные обработчики для команд и запросов
+- Отдельные обработчики для команд и запросов в `Application/Handlers/`
 
 **Структура:**
 ```
 Application/
-├── Commands/
+├── Commands/       # DTO команд
 │   ├── CreateUserCommand.php
-│   └── CreateUserHandler.php
-├── Queries/
+│   └── UpdateUserCommand.php
+├── Queries/        # DTO запросов
 │   ├── GetUserQuery.php
-│   └── GetUserHandler.php
-└── DTOs/
-    ├── CreateUserDTO.php
-    └── UserDTO.php
+│   └── ListUsersQuery.php
+└── Handlers/       # Обработчики
+    ├── CreateUserCommandHandler.php
+    ├── UpdateUserCommandHandler.php
+    ├── GetUserQueryHandler.php
+    └── ListUsersQueryHandler.php
 ```
 
-**Пример команды:**
+**Пример команды (DTO):**
 ```php
 namespace Domains\User\Application\Commands;
 
-use Domains\User\Application\DTOs\CreateUserDTO;
-use Domains\User\Domain\Aggregates\UserAggregate;
-use Spatie\EventSourcing\CommandBus\Commands\CommandHandler;
+use Spatie\LaravelData\Attributes\Validation\Email;
+use Spatie\LaravelData\Attributes\Validation\Min;
+use Spatie\LaravelData\Attributes\Validation\Required;
+use Spatie\LaravelData\Data;
 
-final class CreateUserHandler implements CommandHandler
+final class CreateUserCommand extends Data
 {
-    public function __invoke(CreateUserDTO $dto): string
+    public function __construct(
+        #[Required, Email]
+        public readonly string $email,
+
+        #[Required, Min(2)]
+        public readonly string $name,
+
+        public readonly ?string $phone = null,
+    ) {}
+}
+```
+
+**Пример обработчика команды (Command Handler):**
+```php
+namespace Domains\User\Application\Handlers;
+
+use Domains\User\Application\Commands\CreateUserCommand;
+use Domains\User\Infrastructure\Eloquent\UserModel;
+
+final class CreateUserCommandHandler
+{
+    public function __invoke(CreateUserCommand $command): string
     {
-        $userId = Str::uuid();
-        
-        UserAggregate::create(
-            $userId,
-            $dto->email,
-            $dto->name,
-        )->persist();
-        
-        return $userId;
+        // UserModel использует трейт HasUuids для автогенерации UUID
+        $user = UserModel::create([
+            'email' => $command->email,
+            'name' => $command->name,
+            'phone' => $command->phone,
+        ]);
+
+        return $user->id;
     }
 }
 ```
 
-**Пример запроса:**
+**Пример запроса (Query DTO):**
 ```php
 namespace Domains\User\Application\Queries;
 
-use Domains\User\Application\DTOs\UserDTO;
-use Domains\User\Infrastructure\Eloquent\UserModel;
-
-final class GetUserHandler implements QueryHandler
+final readonly class GetUserQuery
 {
-    public function __invoke(GetUserQuery $query): ?UserDTO
+    public function __construct(
+        public string $userId,
+    ) {}
+}
+```
+
+**Пример обработчика запроса (Query Handler):**
+```php
+namespace Domains\User\Application\Handlers;
+
+use Domains\User\Application\Queries\GetUserQuery;
+use Domains\User\Infrastructure\Eloquent\UserModel;
+use Domains\User\Interfaces\Http\DTOs\UserResponseDTO;
+
+final class GetUserQueryHandler
+{
+    public function __invoke(GetUserQuery $query): ?UserResponseDTO
     {
         $user = UserModel::find($query->userId);
-        
-        return $user ? UserDTO::from($user) : null;
+
+        return $user ? UserResponseDTO::fromModel($user) : null;
     }
 }
+```
+
+**Использование в контроллере:**
+```php
+namespace Domains\User\Interfaces\Http\Controllers;
+
+use Domains\User\Application\Commands\CreateUserCommand;
+use Domains\User\Application\Commands\UpdateUserCommand;
+use Domains\User\Application\Queries\GetUserQuery;
+use Domains\User\Interfaces\Http\DTOs\UserListResponseDTO;
+use Domains\User\Interfaces\Http\DTOs\UserResponseDTO;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Controller;
+
+final class UserController extends Controller
+{
+    public function store(CreateUserCommand $command): UserResponseDTO
+    {
+        $userId = dispatch_sync($command);
+
+        $userDto = dispatch(new GetUserQuery($userId));
+        
+        if ($userDto === null) {
+            abort(404, 'User not found');
+        }
+
+        return $userDto;
+    }
+
+    public function update(string $id, UpdateUserCommand $command): UserResponseDTO
+    {
+        dispatch_sync($command->withId($id));
+
+        $userDto = dispatch(new GetUserQuery($id));
+        
+        if ($userDto === null) {
+            abort(404, 'User not found');
+        }
+
+        return $userDto;
+    }
+
+    public function show(string $id): UserResponseDTO
+    {
+        $userDto = dispatch(new GetUserQuery($id));
+        
+        if ($userDto === null) {
+            abort(404, 'User not found');
+        }
+
+        return $userDto;
+    }
+
+    public function index(Request $request): UserListResponseDTO
+    {
+        return dispatch(new ListUsersQuery($request->query()));
+    }
+}
+```
+
+**Паттерн CQRS в действии:**
+```php
+// Command (изменение состояния)
+$userId = dispatch_sync(new CreateUserCommand(...));
+
+// Query (чтение данных)
+$user = dispatch(new GetUserQuery($userId));
+$users = dispatch(new ListUsersQuery($filters));
 ```
 
 ### 4.3. Event Sourcing
@@ -652,9 +850,10 @@ tests/
 
 **Пример теста:**
 ```php
-namespace Tests\Integration\Domains\User\Commands;
+namespace Tests\Integration\Domains\User\Handlers;
 
 use Domains\User\Application\Commands\CreateUserCommand;
+use Domains\User\Application\Handlers\CreateUserCommandHandler;
 use Tests\TestCase;
 
 final class CreateUserTest extends TestCase
@@ -666,7 +865,8 @@ final class CreateUserTest extends TestCase
             name: 'Test User',
         );
 
-        $userId = dispatch_sync($command);
+        $handler = new CreateUserCommandHandler();
+        $userId = $handler($command);
 
         $this->assertDatabaseHas('users', [
             'id' => $userId,
@@ -674,6 +874,30 @@ final class CreateUserTest extends TestCase
         ]);
     }
 }
+```
+
+**Структура тестов:**
+```
+tests/
+├── Unit/
+│   └── Domains/
+│       └── User/
+│           ├── Domain/
+│           │   └── Aggregates/
+│           │       └── UserAggregateTest.php
+│           └── Application/
+│               └── Handlers/
+│                   └── CreateUserCommandHandlerTest.php
+├── Integration/
+│   └── Domains/
+│       └── User/
+│           └── Handlers/
+│               ├── CreateUserTest.php
+│               └── GetUserTest.php
+└── Feature/
+    └── Http/
+        └── Controllers/
+            └── UserControllerTest.php
 ```
 
 ### 5.5. Infection (мутационное тестирование)
@@ -872,14 +1096,26 @@ QUEUE_CONNECTION=redis
   "scripts": {
     "pint": "pint",
     "pint:test": "pint --test",
-    "phpstan": "phpstan analyse --level=9 --memory-limit=2G",
+    "phpstan": "phpstan analyse -c phpstan.neon --memory-limit=2G",
+    "phpstan:type-coverage": "phpstan analyse -c phpstan-type-coverage.neon --memory-limit=2G",
     "test": "pest",
     "test:coverage": "pest --coverage --min=80",
     "type-coverage": "pest --type-coverage --min=90",
     "infection": "infection --min-msi=90 --min-covered-msi=90",
+    "load-test:smoke": "k6 run --tag test_type=smoke load-tests/user-api.js",
+    "load-test:load": "k6 run --tag test_type=load load-tests/user-api.js",
+    "load-test:stress": "k6 run --tag test_type=stress load-tests/user-api.js",
+    "load-test:all": [
+      "@load-test:smoke",
+      "@load-test:load",
+      "@load-test:stress"
+    ],
+    "swagger": "l5-swagger:generate",
+    "swagger:validate": "l5-swagger:validate",
     "qa": [
       "@pint:test",
       "@phpstan",
+      "@phpstan:type-coverage",
       "@test:coverage",
       "@type-coverage",
       "@infection"
@@ -887,11 +1123,39 @@ QUEUE_CONNECTION=redis
     "qa:fast": [
       "@pint:test",
       "@phpstan",
+      "@phpstan:type-coverage",
       "@test:coverage",
       "@type-coverage"
     ]
   }
 }
+```
+
+**Запуск из Docker контейнера:**
+```bash
+# Все проверки качества
+docker-compose exec app composer qa
+
+# Быстрая проверка
+docker-compose exec app composer qa:fast
+
+# Генерация Swagger документации
+docker-compose exec app composer swagger
+
+# Валидация Swagger документации
+docker-compose exec app composer swagger:validate
+
+# Отдельные проверки
+docker-compose exec app composer pint:test
+docker-compose exec app composer phpstan
+docker-compose exec app composer test
+docker-compose exec app composer type-coverage
+docker-compose exec app composer infection
+
+# Нагрузочные тесты
+docker-compose exec app composer load-test:smoke
+docker-compose exec app composer load-test:load
+docker-compose exec app composer load-test:stress
 ```
 
 ---
@@ -959,7 +1223,7 @@ SCHEDULER_ENABLED=true
 # docker-compose.yml
 services:
   app:
-    image: serversideup/php:8.5-fpm-nginx
+    image: serversideup/php:${DOCKER_PHP_VERSION:-8.4}-fpm-nginx
     healthcheck:
       test: ["CMD", "/usr/bin/php", "/var/www/html/artisan", "health:check"]
       interval: 30s
@@ -968,12 +1232,12 @@ services:
       start_period: 30s
 ```
 
-**Полный docker-compose.yml:**
+**Полный docker-compose.yml (переменные из .env):**
 ```yaml
 version: '3.8'
 services:
   app:
-    image: serversideup/php:8.5-fpm-nginx
+    image: serversideup/php:${DOCKER_PHP_VERSION:-8.4}-fpm-nginx
     volumes:
       - .:/var/www/html
     depends_on:
@@ -981,49 +1245,37 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    environment:
-      - DB_CONNECTION=pgsql
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_DATABASE=app
-      - DB_USERNAME=app
-      - DB_PASSWORD=secret
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CACHE_DRIVER=redis
-      - SESSION_DRIVER=redis
-      - QUEUE_CONNECTION=redis
-      - AUTOBOOT=true
-      - AUTOBOOT_RUN_MIGRATIONS=true
-      - HORIZON_ENABLED=true
-      - SCHEDULER_ENABLED=true
+    env_file:
+      - .env
     healthcheck:
       test: ["CMD", "/usr/bin/php", "/var/www/html/artisan", "health:check"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
+    ports:
+      - "${APP_PORT:-8080}:80"
 
   db:
-    image: postgres:15
+    image: postgres:17
     environment:
-      POSTGRES_DB: app
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: ${DB_DATABASE:-app}
+      POSTGRES_USER: ${DB_USERNAME:-app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-app} -d ${DB_DATABASE:-app}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -1036,21 +1288,38 @@ volumes:
 
 **Конфигурация .env:**
 ```env
+# Server Side Up
+DOCKER_PHP_VERSION=8.4
+APP_PORT=8080
+AUTOBOOT=true
+AUTOBOOT_RUN_MIGRATIONS=true
+HORIZON_ENABLED=true
+SCHEDULER_ENABLED=true
+
+# Database
 DB_CONNECTION=pgsql
-DB_HOST=127.0.0.1
+DB_HOST=db
 DB_PORT=5432
 DB_DATABASE=app
 DB_USERNAME=app
 DB_PASSWORD=secret
 
-REDIS_HOST=127.0.0.1
-REDIS_PASSWORD=null
+# Redis
+REDIS_HOST=redis
 REDIS_PORT=6379
-REDIS_DB=0
+REDIS_PASSWORD=null
+REDIS_SCHEME=tls
 
-CACHE_STORE=redis
+# Cache & Session
+CACHE_DRIVER=redis
 SESSION_DRIVER=redis
+SESSION_LIFETIME=120
+
+# Queue
 QUEUE_CONNECTION=redis
+
+# Load Testing
+LOAD_TEST_BASE_URL=http://localhost:8080
 ```
 
 ### 6.2. Миграции
@@ -1139,70 +1408,32 @@ final class UserController extends Controller
 
 **Требования:**
 - OpenAPI 3.0 спецификация
-- Автоматическая генерация через атрибуты PHPDoc
+- Автоматическая генерация через PHP 8 атрибуты
 - Swagger UI для интерактивного тестирования
 - Примеры запросов и ответов
+- Актуальная документация при каждом изменении
 
-**Рекомендуемый пакет:** [darkaonline/l5-swagger](https://github.com/DarkaOnLine/l5-swagger)
+**Рекомендуемый пакет:** [zircote/swagger-php](https://github.com/zircote/swagger-php)
 
 **Установка:**
 ```bash
-docker-compose exec app composer require --dev darkaonline/l5-swagger
-docker-compose exec app php artisan vendor:publish --provider "L5Swagger\L5SwaggerServiceProvider"
+docker-compose exec app composer require --dev zircote/swagger-php
 ```
 
-**Конфигурация (config/l5-swagger.php):**
-```php
-return [
-    'default' => 'default',
-    'documentations' => [
-        'default' => [
-            'api' => [
-                'title' => 'Laravel DDD API',
-            ],
-            'routes' => [
-                'api' => 'api/documentation',
-            ],
-            'oauth' => [
-                'enabled' => false,
-            ],
-            'swagger-ui' => [
-                'enabled' => true,
-                'ui' => [
-                    'docExpansion' => 'none',
-                    'operationsSorter' => 'alpha',
-                ],
-            ],
-        ],
-    ],
-    'defaults' => [
-        'paths' => [
-            'docs' => storage_path('api-docs'),
-            'views' => base_path('resources/views/vendor/l5-swagger'),
-        ],
-        'scan_options' => [
-            'analyser' => new \OpenApi\StaticAnalyser(),
-            'analysis' => new \OpenApi\Analysis(),
-            'processors' => [
-                new \OpenApi\Processors\DocBlockDescriptions(),
-                new \OpenApi\Processors\MergeIntoOpenApi(),
-                new \OpenApi\Processors\MergeIntoComponents(),
-                new \OpenApi\Processors\ExpandClasses(),
-                new \OpenApi\Processors\ExpandInterfaces(),
-                new \OpenApi\Processors\ExpandTraits(),
-                new \OpenApi\Processors\ExpandEnums(),
-                new \OpenApi\Processors\AugmentSchemas(),
-                new \OpenApi\Processors\AugmentProperties(),
-                new \OpenApi\Processors\BuildPaths(),
-                new \OpenApi\Processors\AugmentParameters(),
-                new \OpenApi\Processors\AugmentOperations(),
-            ],
-        ],
-    ],
-];
+**Генерация документации:**
+```bash
+# Автогенерация OpenAPI документации
+docker-compose exec app composer swagger
+
+# Вручную
+docker-compose exec app php vendor/bin/openapi --output storage/api-docs/api-docs.json --bootstrap vendor/autoload.php src/
 ```
 
-**Пример аннотаций для контроллера:**
+**Результат:**
+- `storage/api-docs/api-docs.json` — OpenAPI спецификация
+- Откройте в Swagger UI или другом совместимом инструменте
+
+**Пример аннотаций для контроллера (PHP 8 атрибуты):**
 ```php
 namespace Domains\User\Interfaces\Http\Controllers;
 
@@ -1269,9 +1500,13 @@ final class UserController extends Controller
     {
         $userId = dispatch_sync($command);
 
-        return UserResponseDTO::fromEntity(
-            dispatch(new GetUserQuery($userId))
-        );
+        $userDto = dispatch(new GetUserQuery($userId));
+        
+        if ($userDto === null) {
+            abort(404, 'User not found');
+        }
+
+        return $userDto;
     }
 
     /**
