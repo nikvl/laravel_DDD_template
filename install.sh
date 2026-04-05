@@ -489,7 +489,7 @@ services:
       POSTGRES_USER: \${DB_USERNAME:-app}
       POSTGRES_PASSWORD: \${DB_PASSWORD:-secret}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_v\${DB_VERSION:-17}:/var/lib/postgresql/data
     ports:
       - "\${DB_PORT:-5432}:5432"
     healthcheck:
@@ -510,7 +510,7 @@ services:
       retries: 5
 
 volumes:
-  postgres_data:
+  postgres_data_v\${DB_VERSION:-17}:
 DOCKERCOMPOSE
 
 # .dockerignore
