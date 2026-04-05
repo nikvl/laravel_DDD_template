@@ -463,7 +463,9 @@ version: '3.8'
 services:
   app:
     image: serversideup/php:\${DOCKER_PHP_VERSION:-8.4}-fpm-nginx
-    user: "\${HOST_UID:-1000}:\${HOST_GID:-1000}"
+    environment:
+      - PHP_USER_ID=\${HOST_UID:-1000}
+      - PHP_GROUP_ID=\${HOST_GID:-1000}
     volumes:
       - .:/var/www/html
     depends_on:
@@ -489,7 +491,7 @@ services:
       POSTGRES_USER: \${DB_USERNAME:-app}
       POSTGRES_PASSWORD: \${DB_PASSWORD:-secret}
     volumes:
-      - postgres_data_v\${DB_VERSION:-17}:/var/lib/postgresql/data
+      - postgresql:/var/lib/postgresql/data
     ports:
       - "\${DB_PORT:-5432}:5432"
     healthcheck:
@@ -510,7 +512,7 @@ services:
       retries: 5
 
 volumes:
-  postgres_data_v\${DB_VERSION:-17}:
+  postgresql:
 DOCKERCOMPOSE
 
 # .dockerignore
