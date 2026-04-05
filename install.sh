@@ -50,66 +50,149 @@ log_info "Создание проекта: ${PROJECT_NAME}"
 log_info "Путь: ${PROJECT_DIR}"
 
 ################################################################################
-# Шаг 0: Выбор версии PHP
+# Проверка .env / .env.example
 ################################################################################
-log_info "Выбор версии PHP..."
+if [ ! -f ".env" ] && [ ! -f ".env.example" ]; then
+    log_info ".env.example не найден, загружаем из репозитория..."
+    if ! curl -sL "https://raw.githubusercontent.com/nikvl/laravel_DDD_template/main/.env.example" -o .env.example 2>/dev/null || [ ! -f ".env.example" ]; then
+        log_warning "Не удалось загрузить .env.example, создаём с настройками по умолчанию..."
+        cat > .env.example << 'ENVEOF'
+################################################################################
+# Laravel API DDD Template - Environment Configuration
+################################################################################
 
-# Проверяем установленные версии PHP
-PHP_83_INSTALLED=false
-PHP_84_INSTALLED=false
-PHP_85_INSTALLED=false
+# ─── Application ──────────────────────────────────────────────────────────────
+APP_NAME="Laravel"
+APP_ENV=local
+APP_KEY=
+APP_DEBUG=true
+APP_URL=http://localhost
+
+APP_LOCALE=en
+APP_FALLBACK_LOCALE=en
+APP_FAKER_LOCALE=en_US
+
+# ─── Server Side Up Docker ────────────────────────────────────────────────────
+DOCKER_PHP_VERSION=8.4
+APP_PORT=8080
+HOST_UID=1000
+HOST_GID=1000
+AUTOBOOT=true
+AUTOBOOT_RUN_MIGRATIONS=true
+HORIZON_ENABLED=true
+SCHEDULER_ENABLED=true
+
+# ─── Logging & Error Handling ─────────────────────────────────────────────────
+LOG_CHANNEL=stack
+LOG_STACK=single
+LOG_DEPRECATIONS_CHANNEL=null
+LOG_LEVEL=debug
+
+# ─── Database (PostgreSQL) ────────────────────────────────────────────────────
+DB_CONNECTION=pgsql
+DB_VERSION=17
+DB_HOST=db
+DB_PORT=5433
+DB_DATABASE=app
+DB_USERNAME=app
+DB_PASSWORD=secret
+
+# ─── Redis ────────────────────────────────────────────────────────────────────
+REDIS_VERSION=8-alpine
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=secret
+REDIS_SCHEME=tls
+
+# ─── Cache & Session ─────────────────────────────────────────────────────────
+CACHE_DRIVER=redis
+SESSION_DRIVER=redis
+SESSION_LIFETIME=120
+
+# ─── Queue ────────────────────────────────────────────────────────────────────
+QUEUE_CONNECTION=redis
+
+# ─── Mail ─────────────────────────────────────────────────────────────────────
+# MAIL_MAILER=log
+# MAIL_HOST=127.0.0.1
+# MAIL_PORT=2525
+# MAIL_USERNAME=null
+# MAIL_PASSWORD=null
+# MAIL_ENCRYPTION=null
+# MAIL_FROM_ADDRESS="hello@example.com"
+# MAIL_FROM_NAME="${APP_NAME}"
+
+# ─── AWS S3 (Optional) ───────────────────────────────────────────────────────
+# AWS_ACCESS_KEY_ID=
+# AWS_SECRET_ACCESS_KEY=
+# AWS_DEFAULT_REGION=us-east-1
+# AWS_BUCKET=
+# AWS_USE_PATH_STYLE_ENDPOINT=false
+
+# ─── Pusher (Optional) ───────────────────────────────────────────────────────
+# PUSHER_APP_ID=
+# PUSHER_APP_KEY=
+# PUSHER_APP_SECRET=
+# PUSHER_HOST=
+# PUSHER_PORT=443
+# PUSHER_SCHEME=https
+# PUSHER_APP_CLUSTER=mt1
+
+# ─── Vite (Optional) ─────────────────────────────────────────────────────────
+# VITE_APP_NAME="${APP_NAME}"
+
+# ─── Load Testing (k6) ───────────────────────────────────────────────────────
+LOAD_TEST_BASE_URL=http://localhost:8080
+LOAD_TEST_API_TOKEN=test-token
+
+# ─── Code Quality Thresholds ─────────────────────────────────────────────────
+# PHPStan static analysis level (0-9)
+PHPSTAN_LEVEL=9
+
+# Minimum type coverage percentage
+TYPE_COVERAGE_MINIMUM=90
+
+# Minimum test coverage percentage
+TEST_COVERAGE_MINIMUM=80
+
+# Infection mutation testing thresholds
+INFECTION_MIN_MSI=90
+INFECTION_MIN_COVERED_MSI=90
+ENVEOF
+        log_success ".env.example создан"
+    else
+        log_success ".env.example загружен из репозитория"
+    fi
+fi
+
+################################################################################
+# Шаг 0/13: Определение версии PHP
+################################################################################
+log_info "Шаг 0/13: Определение версии PHP..."
+
 CURRENT_PHP_VERSION=""
-
 if command -v php &> /dev/null; then
     CURRENT_PHP_VERSION=$(php -v | head -n 1 | cut -d ' ' -f 2 | cut -d '.' -f 1,2)
-    case "$CURRENT_PHP_VERSION" in
-        8.3) PHP_83_INSTALLED=true ;;
-        8.4) PHP_84_INSTALLED=true ;;
-        8.5) PHP_85_INSTALLED=true ;;
-    esac
 fi
 
-# Проверяем, передана ли версия PHP как второй аргумент
+# Приоритет: аргумент > .env > .env.example > дефолт 8.4
+PHP_VERSION_TARGET=""
+
 if [ -n "$2" ]; then
-    PHP_CHOICE="$2"
-else
-    echo ""
-    echo "Выберите версию PHP для установки:"
-    
-    # Формируем строки с учетом установленных версий
-    if [ "$PHP_83_INSTALLED" = true ]; then
-        echo "  1) PHP 8.3 (Laravel 11.x, стабильная) [установлена]"
-    else
-        echo "  1) PHP 8.3 (Laravel 11.x, стабильная) [будет установлена]"
-    fi
-    
-    if [ "$PHP_84_INSTALLED" = true ]; then
-        echo "  2) PHP 8.4 (Laravel 12.x, новая) [установлена]"
-    else
-        echo "  2) PHP 8.4 (Laravel 12.x, новая) [будет установлена]"
-    fi
-    
-    if [ "$PHP_85_INSTALLED" = true ]; then
-        echo "  3) PHP 8.5 (Laravel 13.x, последняя) [установлена]"
-    else
-        echo "  3) PHP 8.5 (Laravel 13.x, последняя) [будет установлена]"
-    fi
-    
-    echo ""
-
-    # Проверяем, запущен ли скрипт в интерактивном режиме
-    if [ -t 0 ]; then
-        read -p "Введите номер (1-3): " PHP_CHOICE
-    else
-        # Неинтерактивный режим - используем PHP 8.4 по умолчанию
-        PHP_CHOICE="2"
-        log_info "Неинтерактивный режим, выбрана PHP 8.4 (по умолчанию)"
-    fi
+    PHP_VERSION_TARGET="$2"
+elif [ -f ".env" ] && grep -q "^DOCKER_PHP_VERSION=" .env 2>/dev/null; then
+    PHP_VERSION_TARGET=$(grep "^DOCKER_PHP_VERSION=" .env | head -1 | cut -d'=' -f2 | tr -d '"' | tr -d "'")
+elif [ -f ".env.example" ] && grep -q "^DOCKER_PHP_VERSION=" .env.example 2>/dev/null; then
+    PHP_VERSION_TARGET=$(grep "^DOCKER_PHP_VERSION=" .env.example | head -1 | cut -d'=' -f2 | tr -d '"' | tr -d "'")
 fi
 
-case $PHP_CHOICE in
-    1)
-        PHP_VERSION_TARGET="8.3"
+# Если версия не определена или некорректна — дефолт 8.4
+if [ -z "$PHP_VERSION_TARGET" ]; then
+    PHP_VERSION_TARGET="8.4"
+fi
+
+case "$PHP_VERSION_TARGET" in
+    8.3)
         LARAVEL_VERSION="^11.0"
         SPATIE_DATA_VERSION="^4.0"
         SPATIE_EVENT_SOURCING_VERSION="^7.0"
@@ -119,23 +202,9 @@ case $PHP_CHOICE in
         PEST_PLUGIN_VERSION="^3.0"
         INFECTION_VERSION="^0.29.0"
         DOCKER_PHP_VERSION="8.3"
-        log_info "Выбрана PHP 8.3 + Laravel 11 (стабильная)"
+        log_info "Используется PHP 8.3 + Laravel 11 (стабильная)"
         ;;
-    2)
-        PHP_VERSION_TARGET="8.4"
-        LARAVEL_VERSION="^12.0"
-        SPATIE_DATA_VERSION="^4.0"
-        SPATIE_EVENT_SOURCING_VERSION="^7.0"
-        SPATIE_PERMISSION_VERSION="^7.0"
-        SAFECODE_VERSION="^2.0"
-        PEST_VERSION="^3.0"
-        PEST_PLUGIN_VERSION="^3.0"
-        INFECTION_VERSION="^0.29.0"
-        DOCKER_PHP_VERSION="8.4"
-        log_info "Выбрана PHP 8.4 + Laravel 12 (новая)"
-        ;;
-    3)
-        PHP_VERSION_TARGET="8.5"
+    8.5)
         LARAVEL_VERSION="^13.0"
         SPATIE_DATA_VERSION="^4.0"
         SPATIE_EVENT_SOURCING_VERSION="^7.0"
@@ -145,10 +214,9 @@ case $PHP_CHOICE in
         PEST_PLUGIN_VERSION="^4.0"
         INFECTION_VERSION="^0.30.0"
         DOCKER_PHP_VERSION="8.5"
-        log_info "Выбрана PHP 8.5 + Laravel 13 (последняя)"
+        log_info "Используется PHP 8.5 + Laravel 13 (последняя)"
         ;;
     *)
-        log_error "Неверный выбор. Используется PHP 8.4 по умолчанию."
         PHP_VERSION_TARGET="8.4"
         LARAVEL_VERSION="^12.0"
         SPATIE_DATA_VERSION="^4.0"
@@ -159,6 +227,7 @@ case $PHP_CHOICE in
         PEST_PLUGIN_VERSION="^3.0"
         INFECTION_VERSION="^0.29.0"
         DOCKER_PHP_VERSION="8.4"
+        log_info "Используется PHP 8.4 + Laravel 12 (по умолчанию)"
         ;;
 esac
 
@@ -173,9 +242,9 @@ if [ "$CURRENT_PHP_VERSION" != "$PHP_VERSION_TARGET" ]; then
 fi
 
 ################################################################################
-# Шаг 1: Проверка и установка PHP и Composer
+# Шаг 1/13: Проверка и установка PHP и Composer
 ################################################################################
-log_info "Шаг 1/14: Проверка PHP и Composer..."
+log_info "Шаг 1/13: Проверка PHP и Composer..."
 
 PHP_INSTALLED=false
 COMPOSER_INSTALLED=false
@@ -279,9 +348,9 @@ fi
 log_success "PHP и Composer готовы к работе"
 
 ################################################################################
-# Шаг 2: Создание Laravel проекта
+# Шаг 2/13: Создание Laravel проекта
 ################################################################################
-log_info "Шаг 2/14: Создание Laravel проекта..."
+log_info "Шаг 2/13: Создание Laravel проекта..."
 
 # Создаём проект через composer create-project (официальный способ Laravel)
 composer create-project "laravel/laravel:${LARAVEL_VERSION}" "${PROJECT_NAME}" --prefer-dist
@@ -291,9 +360,9 @@ cd "${PROJECT_DIR}" || exit 1
 log_success "Laravel проект создан"
 
 ################################################################################
-# Шаг 3: Установка основных пакетов
+# Шаг 3/13: Установка основных пакетов
 ################################################################################
-log_info "Шаг 3/14: Установка основных пакетов..."
+log_info "Шаг 3/13: Установка основных пакетов..."
 
 composer require \
     "laravel/framework:${LARAVEL_VERSION}" \
@@ -306,9 +375,9 @@ composer require \
 log_success "Основные пакеты установлены"
 
 ################################################################################
-# Шаг 4: Установка dev-зависимостей
+# Шаг 4/13: Установка dev-зависимостей
 ################################################################################
-log_info "Шаг 4/14: Установка dev-зависимостей..."
+log_info "Шаг 4/13: Установка dev-зависимостей..."
 
 # Разрешаем плагины
 composer config allow-plugins.infection/extension-installer true
@@ -329,9 +398,9 @@ composer require --dev \
 log_success "Dev-зависимости установлены"
 
 ################################################################################
-# Шаг 5: Создание структуры доменов
+# Шаг 5/13: Создание структуры доменов
 ################################################################################
-log_info "Шаг 5/14: Создание структуры доменов..."
+log_info "Шаг 5/13: Создание структуры доменов..."
 
 mkdir -p src/Domains/User/Application/Commands
 mkdir -p src/Domains/User/Application/Queries
@@ -352,9 +421,9 @@ mkdir -p src/Domains/User/Interfaces/CLI
 log_success "Структура доменов создана"
 
 ################################################################################
-# Шаг 6: Создание Docker-окружения (Server Side Up)
+# Шаг 6/13: Создание Docker-окружения (Server Side Up)
 ################################################################################
-log_info "Шаг 6/14: Создание Docker-окружения (Server Side Up)..."
+log_info "Шаг 6/13: Создание Docker-окружения (Server Side Up)..."
 
 # Создаём директорию для Dockerfile
 mkdir -p docker/php
@@ -388,6 +457,7 @@ version: '3.8'
 services:
   app:
     image: serversideup/php:\${DOCKER_PHP_VERSION:-8.4}-fpm-nginx
+    user: "\${HOST_UID:-1000}:\${HOST_GID:-1000}"
     volumes:
       - .:/var/www/html
     depends_on:
@@ -407,7 +477,7 @@ services:
       - "\${APP_PORT:-8080}:80"
 
   db:
-    image: postgres:17
+    image: postgres:\${DB_VERSION:-17}
     environment:
       POSTGRES_DB: \${DB_DATABASE:-app}
       POSTGRES_USER: \${DB_USERNAME:-app}
@@ -423,11 +493,12 @@ services:
       retries: 5
 
   redis:
-    image: redis:8-alpine
+    image: redis:\${REDIS_VERSION:-8-alpine}
+    command: redis-server --requirepass \${REDIS_PASSWORD:-secret}
     ports:
       - "\${REDIS_PORT:-6379}:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "\${REDIS_PASSWORD:-secret}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -456,9 +527,78 @@ DOCKERIGNORE
 log_success "Docker-окружение создано"
 
 ################################################################################
-# Шаг 7: Создание конфигурационных файлов
+# Шаг 7/13: Создание .env и конфигурационных файлов
 ################################################################################
-log_info "Шаг 7/14: Создание конфигурационных файлов..."
+log_info "Шаг 7/13: Создание окружения и конфигурационных файлов..."
+
+# Копируем наш .env.example (заменяем стандартный Laravel)
+cp .env.example .env 2>/dev/null || true
+
+# Генерируем APP_KEY
+php artisan key:generate
+
+# Функция: добавляет переменную в .env только если она ещё не существует
+set_env() {
+    local key="$1"
+    local value="$2"
+    if ! grep -q "^${key}=" .env 2>/dev/null; then
+        echo "${key}=${value}" >> .env
+    fi
+}
+
+# Функция: читает значение из .env (если существует)
+get_env() {
+    local key="$1"
+    local default="$2"
+    local value
+    value=$(grep "^${key}=" .env 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    echo "${value:-$default}"
+}
+
+# Server Side Up Docker
+set_env "DOCKER_PHP_VERSION" "${DOCKER_PHP_VERSION}"
+set_env "APP_PORT" "8080"
+set_env "HOST_UID" "$(id -u)"
+set_env "HOST_GID" "$(id -g)"
+set_env "AUTOBOOT" "true"
+set_env "AUTOBOOT_RUN_MIGRATIONS" "true"
+set_env "HORIZON_ENABLED" "true"
+set_env "SCHEDULER_ENABLED" "true"
+
+# Database
+set_env "DB_CONNECTION" "pgsql"
+set_env "DB_VERSION" "17"
+set_env "DB_HOST" "db"
+set_env "DB_PORT" "5433"
+set_env "DB_DATABASE" "app"
+set_env "DB_USERNAME" "app"
+set_env "DB_PASSWORD" "secret"
+
+# Redis
+set_env "REDIS_VERSION" "8-alpine"
+set_env "REDIS_HOST" "redis"
+set_env "REDIS_PORT" "6379"
+set_env "REDIS_PASSWORD" "secret"
+set_env "REDIS_SCHEME" "tls"
+
+# Cache & Session
+set_env "CACHE_DRIVER" "redis"
+set_env "SESSION_DRIVER" "redis"
+set_env "SESSION_LIFETIME" "120"
+
+# Queue
+set_env "QUEUE_CONNECTION" "redis"
+
+# Load Testing
+set_env "LOAD_TEST_BASE_URL" "http://localhost:8080"
+set_env "LOAD_TEST_API_TOKEN" "test-token"
+
+# Читаем пороги качества из .env
+PHPSTAN_LEVEL=$(get_env "PHPSTAN_LEVEL" "9")
+TYPE_COVERAGE_MIN=$(get_env "TYPE_COVERAGE_MINIMUM" "90")
+TEST_COVERAGE_MIN=$(get_env "TEST_COVERAGE_MINIMUM" "80")
+INFECTION_MSI=$(get_env "INFECTION_MIN_MSI" "90")
+INFECTION_COVERED_MSI=$(get_env "INFECTION_MIN_COVERED_MSI" "90")
 
 # pint.json
 cat > pint.json << 'PINTJSON'
@@ -476,28 +616,28 @@ cat > pint.json << 'PINTJSON'
 PINTJSON
 
 # phpstan.neon
-cat > phpstan.neon << 'PHPSTANNEON'
+cat > phpstan.neon << PHPSTANNEON
 parameters:
-    level: 4
+    level: ${PHPSTAN_LEVEL}
     paths:
         - app/
+        - src/
     excludePaths:
         - tests/
-        - src/
 PHPSTANNEON
 
 # phpstan-type-coverage.neon
-cat > phpstan-type-coverage.neon << 'PHPSTANNEON'
+cat > phpstan-type-coverage.neon << PHPSTANNEON
 includes:
     - ./vendor/tomasvotruba/type-coverage/config/config.neon
 
 parameters:
     type_coverage:
-        minimum: 70
+        minimum: ${TYPE_COVERAGE_MIN}
 PHPSTANNEON
 
 # infection.json5
-cat > infection.json5 << 'INFECTIONJSON'
+cat > infection.json5 << INFECTIONJSON
 {
   "source": {
     "directories": [
@@ -524,88 +664,43 @@ cat > infection.json5 << 'INFECTIONJSON'
   "coverage": {
     "test": "--coverage=phpunit"
   },
-  "minMsi": 90,
-  "minCoveredMsi": 90
+  "minMsi": ${INFECTION_MSI},
+  "minCoveredMsi": ${INFECTION_COVERED_MSI}
 }
 INFECTIONJSON
 
-log_success "Конфигурационные файлы созданы"
+log_success "Окружение и конфигурационные файлы созданы"
 
 ################################################################################
-# Шаг 8: Настройка .env
+# Шаг 8/13: Обновление composer.json скриптов
 ################################################################################
-log_info "Шаг 8/14: Настройка окружения..."
-
-# Копируем .env.example в .env
-cp .env.example .env
-
-# Генерируем APP_KEY
-php artisan key:generate
-
-# Добавляем переменные для Server Side Up и нагрузочного тестирования
-cat >> .env << ENVVARS
-
-# Server Side Up
-DOCKER_PHP_VERSION=${DOCKER_PHP_VERSION}
-APP_PORT=8080
-AUTOBOOT=true
-AUTOBOOT_RUN_MIGRATIONS=true
-HORIZON_ENABLED=true
-SCHEDULER_ENABLED=true
-
-# Database
-DB_CONNECTION=pgsql
-DB_HOST=db
-DB_PORT=5433
-DB_DATABASE=app
-DB_USERNAME=app
-DB_PASSWORD=secret
-
-# Redis
-REDIS_HOST=redis
-REDIS_PORT=6379
-REDIS_PASSWORD=null
-REDIS_SCHEME=tls
-
-# Cache & Session
-CACHE_DRIVER=redis
-SESSION_DRIVER=redis
-SESSION_LIFETIME=120
-
-# Queue
-QUEUE_CONNECTION=redis
-
-# Load Testing
-LOAD_TEST_BASE_URL=http://localhost:8080
-ENVVARS
-
-log_success "Окружение настроено"
-
-################################################################################
-# Шаг 9: Обновление composer.json скриптов
-################################################################################
-log_info "Шаг 9/14: Настройка composer скриптов..."
+log_info "Шаг 8/13: Настройка composer скриптов..."
 
 # Читаем текущий composer.json и добавляем скрипты
-php -r '
-$composer = json_decode(file_get_contents("composer.json"), true);
-$composer["scripts"]["pint"] = "pint";
-$composer["scripts"]["pint:test"] = "pint --test";
-$composer["scripts"]["phpstan"] = "phpstan analyse -c phpstan.neon --memory-limit=2G";
-$composer["scripts"]["phpstan:type-coverage"] = "phpstan analyse -c phpstan-type-coverage.neon --memory-limit=2G";
-$composer["scripts"]["test"] = "pest";
-$composer["scripts"]["test:coverage"] = "pest --coverage --min=80";
-$composer["scripts"]["type-coverage"] = "pest --type-coverage --min=90";
-$composer["scripts"]["infection"] = "infection --min-msi=90 --min-covered-msi=90";
-$composer["scripts"]["swagger"] = "test -d storage/api-docs || mkdir -p storage/api-docs && php vendor/bin/openapi --output storage/api-docs/api-docs.json --bootstrap vendor/autoload.php src/";
-$composer["scripts"]["load-test:smoke"] = "k6 run --tag test_type=smoke load-tests/user-api.js";
-$composer["scripts"]["load-test:load"] = "k6 run --tag test_type=load load-tests/user-api.js";
-$composer["scripts"]["load-test:stress"] = "k6 run --tag test_type=stress load-tests/user-api.js";
-$composer["scripts"]["load-test:all"] = ["@load-test:smoke", "@load-test:load", "@load-test:stress"];
-$composer["scripts"]["qa"] = ["@pint:test", "@phpstan", "@phpstan:type-coverage", "@test:coverage", "@type-coverage", "@infection"];
-$composer["scripts"]["qa:fast"] = ["@pint:test", "@phpstan", "@phpstan:type-coverage", "@test:coverage", "@type-coverage"];
-file_put_contents("composer.json", json_encode($composer, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-'
+TEST_COV_MIN="${TEST_COVERAGE_MIN:-80}"
+TYPE_COV_MIN="${TYPE_COVERAGE_MIN:-90}"
+INF_MSI="${INFECTION_MSI:-90}"
+INF_COVERED="${INFECTION_COVERED_MSI:-90}"
+
+php -r "
+\$composer = json_decode(file_get_contents('composer.json'), true);
+\$composer['scripts']['pint'] = 'pint';
+\$composer['scripts']['pint:test'] = 'pint --test';
+\$composer['scripts']['phpstan'] = 'phpstan analyse -c phpstan.neon --memory-limit=2G';
+\$composer['scripts']['phpstan:type-coverage'] = 'phpstan analyse -c phpstan-type-coverage.neon --memory-limit=2G';
+\$composer['scripts']['test'] = 'pest';
+\$composer['scripts']['test:coverage'] = 'pest --coverage --min=${TEST_COV_MIN}';
+\$composer['scripts']['type-coverage'] = 'pest --type-coverage --min=${TYPE_COV_MIN}';
+\$composer['scripts']['infection'] = 'infection --min-msi=${INF_MSI} --min-covered-msi=${INF_COVERED}';
+\$composer['scripts']['swagger'] = 'test -d storage/api-docs || mkdir -p storage/api-docs && php vendor/bin/openapi --output storage/api-docs/api-docs.json --bootstrap vendor/autoload.php src/';
+\$composer['scripts']['load-test:smoke'] = 'k6 run --tag test_type=smoke load-tests/user-api.js';
+\$composer['scripts']['load-test:load'] = 'k6 run --tag test_type=load load-tests/user-api.js';
+\$composer['scripts']['load-test:stress'] = 'k6 run --tag test_type=stress load-tests/user-api.js';
+\$composer['scripts']['load-test:all'] = ['@load-test:smoke', '@load-test:load', '@load-test:stress'];
+\$composer['scripts']['qa'] = ['@pint:test', '@phpstan', '@phpstan:type-coverage', '@test:coverage', '@type-coverage', '@infection'];
+\$composer['scripts']['qa:fast'] = ['@pint:test', '@phpstan', '@phpstan:type-coverage', '@test:coverage', '@type-coverage'];
+file_put_contents('composer.json', json_encode(\$composer, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+"
 
 log_success "Composer скрипты настроены"
 
@@ -620,9 +715,9 @@ composer dump-autoload --quiet
 log_success "Autoload настроен"
 
 ################################################################################
-# Шаг 10: Создание примера домена User
+# Шаг 9/13: Создание примера домена User
 ################################################################################
-log_info "Шаг 10/14: Создание примера домена User..."
+log_info "Шаг 9/13: Создание примера домена User..."
 
 # Command DTO - CreateUserCommand
 cat > src/Domains/User/Application/Commands/CreateUserCommand.php << 'PHP'
@@ -1288,9 +1383,9 @@ PHP
 log_success "Пример домена User создан"
 
 ################################################################################
-# Шаг 11: Создание миграций и настройка маршрутов
+# Шаг 10/13: Создание миграций и настройка маршрутов
 ################################################################################
-log_info "Шаг 11/14: Создание миграций и маршрутов..."
+log_info "Шаг 10/13: Создание миграций и маршрутов..."
 
 # Создаём миграцию users
 cat > database/migrations/2024_01_01_000000_create_users_table.php << 'PHP'
@@ -1345,9 +1440,9 @@ ROUTES
 log_success "Миграции и маршруты созданы"
 
 ################################################################################
-# Шаг 12: Создание тестов
+# Шаг 11/13: Создание тестов
 ################################################################################
-log_info "Шаг 12/14: Создание тестов..."
+log_info "Шаг 11/13: Создание тестов..."
 
 mkdir -p tests/Integration/Domains/User/Handlers
 
@@ -1385,15 +1480,15 @@ PHP
 log_success "Тесты созданы"
 
 ################################################################################
-# Шаг 13: Создание GitHub Actions workflow и load-тестов
+# Шаг 12/13: Создание GitHub Actions workflow и load-тестов
 ################################################################################
-log_info "Шаг 13/14: Настройка CI/CD и нагрузочных тестов..."
+log_info "Шаг 12/13: Настройка CI/CD и нагрузочных тестов..."
 
 mkdir -p .github/workflows
 mkdir -p load-tests/results
 
 # GitHub Actions CI/CD
-cat > .github/workflows/ci.yml << 'YAML'
+cat > .github/workflows/ci.yml << YAML
 name: CI
 
 on:
@@ -1408,7 +1503,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15
+        image: postgres:\${DB_VERSION:-17}
         env:
           POSTGRES_DB: test
           POSTGRES_USER: postgres
@@ -1422,7 +1517,7 @@ jobs:
           --health-retries 5
 
       redis:
-        image: redis:7-alpine
+        image: redis:\${REDIS_VERSION:-8-alpine}
         ports:
           - 6379:6379
         options: >-
@@ -1437,7 +1532,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: '${DOCKER_PHP_VERSION}'
           extensions: pgsql, redis
           coverage: xdebug
           tools: infection
@@ -1566,9 +1661,9 @@ K6JS
 log_success "CI/CD и нагрузочные тесты настроены"
 
 ################################################################################
-# Шаг 15: Запуск Docker и проверок качества
+# Шаг 13/13: Запуск Docker и проверок качества
 ################################################################################
-log_info "Шаг 15/15: Запуск Docker и проверок качества..."
+log_info "Шаг 13/13: Запуск Docker и проверок качества..."
 
 # Проверка доступной команды docker compose
 if command -v docker &> /dev/null && docker compose version &> /dev/null 2>&1; then

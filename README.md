@@ -3,17 +3,17 @@
 > **Автоматическая установка через Docker (не требует локального PHP/Composer):**
 > ```bash
 > # Быстрый старт через curl (рекомендуется)
-> curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/main/install.sh | bash -s -- my-project 3
+> curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/main/install.sh | bash -s -- my-project
 >
-> # Или вручную с выбором PHP версии
-> bash install.sh my-project          # Интерактивный режим
-> bash install.sh my-project 3        # Неинтерактивный (PHP 8.5)
+> # Или вручную
+> bash install.sh my-project          # PHP версия берётся из .env.example
+> bash install.sh my-project 8.5      # Можно указать версию PHP явно
 > ```
 >
-> **Доступные версии PHP:**
-> - `1` — PHP 8.3 + Laravel 11 (стабильная)
-> - `2` — PHP 8.4 + Laravel 12 (новая)
-> - `3` — PHP 8.5 + Laravel 13 (последняя)
+> **Доступные версии PHP (указываются в `.env.example` → `DOCKER_PHP_VERSION`):**
+> - `8.3` — Laravel 11.x (стабильная)
+> - `8.4` — Laravel 12.x (по умолчанию)
+> - `8.5` — Laravel 13.x (последняя)
 >
 > **Что делает скрипт:**
 > 1. Проверяет/устанавливает выбранную версию PHP
@@ -32,30 +32,80 @@
 > - ✅ Оптимизирован для production
 > - ✅ Все переменные из .env файла
 
+## ⚙️ Настройка через .env
+
+Все параметры проекта управляются через `.env` файл. Перед установкой отредактируйте `.env.example` → переименуйте в `.env`, либо настройте переменные после установки.
+
+### Основные переменные
+
+| Переменная | По умолчанию | Описание |
+|-----------|--------------|----------|
+| `DOCKER_PHP_VERSION` | `8.4` | Версия PHP в Docker (8.3, 8.4, 8.5) |
+| `APP_PORT` | `8080` | Внешний порт приложения |
+| `HOST_UID` | `1000` | UID пользователя хоста (для прав доступа) |
+| `HOST_GID` | `1000` | GID группы пользователя хоста |
+| `DB_VERSION` | `17` | Версия PostgreSQL |
+| `DB_PORT` | `5433` | Внешний порт PostgreSQL |
+| `REDIS_VERSION` | `8-alpine` | Версия Redis |
+| `REDIS_PASSWORD` | `secret` | Пароль Redis |
+
+### Пороги качества кода
+
+| Переменная | По умолчанию | Описание |
+|-----------|--------------|----------|
+| `PHPSTAN_LEVEL` | `9` | Уровень статического анализа (0–9) |
+| `TYPE_COVERAGE_MINIMUM` | `90` | Минимальное покрытие типами (%) |
+| `TEST_COVERAGE_MINIMUM` | `80` | Минимальное покрытие тестами (%) |
+| `INFECTION_MIN_MSI` | `90` | Минимальный MSI Infection (%) |
+| `INFECTION_MIN_COVERED_MSI` | `90` | Минимальный Covered MSI (%) |
+
+### Быстрый старт с настройкой
+
+```bash
+# 1. Отредактируйте .env.example (DB_PASSWORD, HOST_UID и т.д.)
+
+# 2. Запустите установку (PHP версия из .env.example)
+bash install.sh my-project
+# Или с явной версией PHP:
+bash install.sh my-project 8.5
+
+# 3. Запустите контейнеры
+docker compose up -d
+
+# 4. Установите зависимости
+docker compose exec app composer install
+
+# 5. Запустите миграции
+docker compose exec app php artisan migrate
+```
+
 ## Описание проекта
 
 ### Быстрый старт
 
 ```bash
-# 1. Установка через curl (рекомендуется)
-curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/main/install.sh | bash -s -- my-project 3
+# 1. Установка (PHP версия из .env.example → DOCKER_PHP_VERSION)
+bash install.sh my-project
 
 # 2. Перейдите в директорию проекта
 cd my-project
 
-# 3. Docker контейнеры уже запущены! Проверьте статус:
-docker compose ps
+# 3. Запустите контейнеры
+docker compose up -d
 
-# 4. Запустите миграции (если не выполнены автоматически):
+# 4. Установите зависимости
+docker compose exec app composer install
+
+# 5. Запустите миграции
 docker compose exec app php artisan migrate
 
-# 5. Откройте Swagger UI:
+# 6. Откройте Swagger UI:
 # http://localhost:8080/api/documentation
 
-# 6. Сгенерируйте Swagger документацию:
+# 7. Сгенерируйте Swagger документацию:
 docker compose exec app composer swagger
 
-# 7. Запустите тесты:
+# 8. Запустите тесты:
 docker compose exec app composer test
 ```
 
