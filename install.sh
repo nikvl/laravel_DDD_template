@@ -5,9 +5,9 @@
 # Автоматическая установка проекта с архитектурой DDD + CQRS + Event Sourcing
 #
 # Использование:
-#   curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/install.sh | bash -s -- project-name
+#   curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/install.sh | bash -s -- backend
 #   # или
-#   bash install.sh project-name
+#   bash install.sh backend
 ################################################################################
 
 set -e
@@ -39,7 +39,7 @@ log_error() {
 # Проверка наличия аргумента
 if [ -z "$1" ]; then
     log_error "Не указано имя проекта!"
-    echo "Использование: bash $0 <project-name>"
+    echo "Использование: bash $0 <backend>"
     exit 1
 fi
 
@@ -356,6 +356,12 @@ log_info "Шаг 2/13: Создание Laravel проекта..."
 composer create-project "laravel/laravel:${LARAVEL_VERSION}" "${PROJECT_NAME}" --prefer-dist
 
 cd "${PROJECT_DIR}" || exit 1
+
+# Подменяем стандартный .env.example от Laravel на наш
+if [ -f "${PROJECT_DIR}/../.env.example" ]; then
+    cp "${PROJECT_DIR}/../.env.example" .env.example
+    log_info ".env.example подменён на шаблон из репозитория"
+fi
 
 log_success "Laravel проект создан"
 

@@ -1,15 +1,30 @@
 # Laravel API DDD Template
 
 > **Автоматическая установка через Docker (не требует локального PHP/Composer):**
-> ```bash
-> # Быстрый старт через curl (рекомендуется)
-> curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/main/install.sh | bash -s -- my-project
->
-> # Или вручную
-> bash install.sh my-project          # PHP версия берётся из .env.example
-> bash install.sh my-project 8.5      # Можно указать версию PHP явно
-> ```
->
+
+### Быстрая установка (одной командой)
+
+```bash
+curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_template/main/install.sh | bash -s -- backend
+```
+
+### Ручная установка
+
+```bash
+bash install.sh backend              # PHP версия из .env.example
+bash install.sh backend 8.5          # Можно указать версию PHP явно
+```
+
+### Скачивание конфигурации
+
+```bash
+curl -sL -O https://raw.githubusercontent.com/nikvl/laravel_DDD_template/main/.env.example
+```
+
+Создаёт `.env.example` в текущей директории — отредактируйте перед запуском установки.
+
+---
+
 > **Доступные версии PHP (указываются в `.env.example` → `DOCKER_PHP_VERSION`):**
 > - `8.3` — Laravel 11.x (стабильная)
 > - `8.4` — Laravel 12.x (по умолчанию)
@@ -65,9 +80,9 @@
 # 1. Отредактируйте .env.example (DB_PASSWORD, HOST_UID и т.д.)
 
 # 2. Запустите установку (PHP версия из .env.example)
-bash install.sh my-project
+bash install.sh backend
 # Или с явной версией PHP:
-bash install.sh my-project 8.5
+bash install.sh backend 8.5
 
 # 3. Запустите контейнеры
 docker compose up -d
@@ -85,10 +100,10 @@ docker compose exec app php artisan migrate
 
 ```bash
 # 1. Установка (PHP версия из .env.example → DOCKER_PHP_VERSION)
-bash install.sh my-project
+bash install.sh backend
 
 # 2. Перейдите в директорию проекта
-cd my-project
+cd backend
 
 # 3. Запустите контейнеры
 docker compose up -d
@@ -2584,10 +2599,10 @@ k6 run --tag test_type=stress load-tests/user-api.js
 **Быстрая установка проекта:**
 ```bash
 # Автоматическая установка (не требует локального PHP/Composer)
-curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_TEMPLATE/install.sh | bash -s -- my-project
+curl -sL https://raw.githubusercontent.com/nikvl/laravel_DDD_TEMPLATE/install.sh | bash -s -- backend
 
 # Перейти в проект
-cd my-project
+cd backend
 
 # Запустить Docker (Server Side Up)
 docker-compose up -d
