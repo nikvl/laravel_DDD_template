@@ -462,15 +462,14 @@ USER www-data
 DOCKERFILE
 
 # docker-compose.yml для Server Side Up
-cat > docker-compose.yml << DOCKERCOMPOSE
-version: '3.8'
+cat > docker-compose.yml << 'DOCKERCOMPOSE'
 services:
   app:
-    image: serversideup/php:\${DOCKER_PHP_VERSION:-8.4}-fpm-nginx
+    image: serversideup/php:${DOCKER_PHP_VERSION:-8.4}-fpm-nginx
     environment:
       - PHP_OPCACHE_ENABLE=1
-      - PHP_USER_ID=\${HOST_UID:-1000}
-      - PHP_GROUP_ID=\${HOST_GID:-1000}
+      - PHP_USER_ID=${HOST_UID:-1000}
+      - PHP_GROUP_ID=${HOST_GID:-1000}
     volumes:
       - .:/var/www/html
     depends_on:
@@ -487,31 +486,31 @@ services:
       retries: 3
       start_period: 30s
     ports:
-      - "\${APP_PORT:-8080}:80"
+      - "${APP_PORT:-8080}:80"
 
   db:
-    image: postgres:\${DB_VERSION:-17}
+    image: postgres:${DB_VERSION:-17}
     environment:
-      POSTGRES_DB: \${DB_DATABASE:-app}
-      POSTGRES_USER: \${DB_USERNAME:-app}
-      POSTGRES_PASSWORD: \${DB_PASSWORD:-secret}
+      POSTGRES_DB: ${DB_DATABASE:-app}
+      POSTGRES_USER: ${DB_USERNAME:-app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
     volumes:
       - postgresql:/var/lib/postgresql/data
     ports:
-      - "\${DB_PORT:-5432}:5432"
+      - "${DB_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \${DB_USERNAME:-app} -d \${DB_DATABASE:-app}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-app} -d ${DB_DATABASE:-app}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
-    image: redis:\${REDIS_VERSION:-8-alpine}
-    command: redis-server --requirepass \${REDIS_PASSWORD:-secret}
+    image: redis:${REDIS_VERSION:-8-alpine}
+    command: redis-server --requirepass ${REDIS_PASSWORD:-secret}
     ports:
-      - "\${REDIS_PORT:-6379}:6379"
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "\${REDIS_PASSWORD:-secret}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-secret}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -1934,7 +1933,7 @@ sleep 10
 
 # Смена владельца /var/www/html внутри контейнера на нужный UID/GID
 log_info "Настройка прав внутри контейнера (/var/www/html)..."
-$DOCKER_COMPOSE_CMD exec -T app chown -R ${HOST_UID}:${HOST_GID} /var/www/html || \
+$DOCKER_COMPOSE_CMD exec -T --user root app chown -R ${HOST_UID}:${HOST_GID} /var/www/html 2>&1 || \
     log_warning "Не удалось сменить права внутри контейнера"
 
 log_info "Запуск PHPStan (базовый уровень)..."
