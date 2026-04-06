@@ -1936,6 +1936,13 @@ log_info "Установка прав доступа на проект..."
 sudo chown -R ${HOST_UID}:${HOST_GID} "${PROJECT_DIR}" 2>/dev/null || \
     log_warning "Не удалось установить права (проверьте sudo доступ)"
 
+# Гарантируем права на запись для storage/logs
+log_info "Настройка прав для storage/logs..."
+# Создаём директорию и файл логов заранее от нужного пользователя
+mkdir -p "${PROJECT_DIR}/storage/logs" 2>/dev/null || true
+touch "${PROJECT_DIR}/storage/logs/laravel.log" 2>/dev/null || true
+chown -R ${HOST_UID}:${HOST_GID} "${PROJECT_DIR}/storage" "${PROJECT_DIR}/bootstrap/cache" 2>/dev/null || true
+
 log_info "Сборка Docker образа с UID/GID=${HOST_UID}:${HOST_GID}..."
 $DOCKER_COMPOSE_CMD build || \
     log_warning "Не удалось собрать образ (будет собран при первом запуске)"
