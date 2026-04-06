@@ -438,12 +438,14 @@ log_info "Шаг 6/13: Создание Docker-окружения (Server Side U
 # Создаём директорию для Dockerfile
 mkdir -p docker/php
 
-# Dockerfile от Server Side Up
+# Dockerfile — обёртка над Server Side Up с правильной настройкой прав
 cat > docker/php/Dockerfile << DOCKERFILE
-FROM serversideup/php:${DOCKER_PHP_VERSION}-fpm-nginx
+ARG IMAGE_URL=serversideup/php:${DOCKER_PHP_VERSION}-fpm-nginx
+FROM \$IMAGE_URL
+
+USER root
 
 # Установка расширений PHP
-USER root
 RUN install-php-extensions \
     pgsql \
     pdo_pgsql \
@@ -458,6 +460,15 @@ RUN install-php-extensions \
 
 # Очистка кэша
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Настройка UID/GID пользователя
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+RUN docker-php-serversideup-set-id www-data \${USER_ID}:\${GROUP_ID}
+
+# Настройка прав для nginx (если есть)
+RUN if [ -d /etc/nginx ]; then docker-php-serversideup-set-file-permissions --owner \${USER_ID}:\${GROUP_ID} --service nginx; fi
+
 USER www-data
 DOCKERFILE
 
@@ -465,11 +476,15 @@ DOCKERFILE
 cat > docker-compose.yml << 'DOCKERCOMPOSE'
 services:
   app:
-    image: serversideup/php:${DOCKER_PHP_VERSION:-8.4}-fpm-nginx
+    build:
+      context: ./docker/php
+      dockerfile: Dockerfile
+      args:
+        IMAGE_URL: serversideup/php:${DOCKER_PHP_VERSION:-8.4}-fpm-nginx
+        USER_ID: ${HOST_UID:-1000}
+        GROUP_ID: ${HOST_GID:-1000}
     environment:
       - PHP_OPCACHE_ENABLE=1
-      - PHP_USER_ID=${HOST_UID:-1000}
-      - PHP_GROUP_ID=${HOST_GID:-1000}
     volumes:
       - .:/var/www/html
     depends_on:
@@ -1925,16 +1940,15 @@ log_info "Установка прав доступа на проект..."
 sudo chown -R ${HOST_UID}:${HOST_GID} "${PROJECT_DIR}" 2>/dev/null || \
     log_warning "Не удалось установить права (проверьте sudo доступ)"
 
+log_info "Сборка Docker образа с UID/GID=${HOST_UID}:${HOST_GID}..."
+$DOCKER_COMPOSE_CMD build || \
+    log_warning "Не удалось собрать образ (будет собран при первом запуске)"
+
 log_info "Запуск Docker контейнеров..."
 $DOCKER_COMPOSE_CMD up -d
 
 log_info "Ожидание готовности контейнеров..."
 sleep 10
-
-# Смена владельца /var/www/html внутри контейнера на нужный UID/GID
-log_info "Настройка прав внутри контейнера (/var/www/html)..."
-$DOCKER_COMPOSE_CMD exec -T --user root app chown -R ${HOST_UID}:${HOST_GID} /var/www/html 2>&1 || \
-    log_warning "Не удалось сменить права внутри контейнера"
 
 log_info "Запуск PHPStan (базовый уровень)..."
 $DOCKER_COMPOSE_CMD exec -T app composer phpstan || log_warning "PHPStan обнаружил ошибки (это можно исправить вручную)"

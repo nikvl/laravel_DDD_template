@@ -162,34 +162,31 @@ docker compose exec app composer <command>
 ./composer.json is not writable.
 ```
 
-**Причина:** Server Side Up образ запускает entrypoint от root для настройки nginx/PHP, затем переключается на `PHP_USER_ID`/`PHP_GROUP_ID` для работы с файлами. Если права не совпадают — возникает ошибка.
+**Причина:** UID/GID пользователя в контейнере не совпадает с хостом.
 
 **Решение:**
 
 ```bash
-# 1. Остановите контейнеры
-docker compose down
-
-# 2. Убедитесь, что в .env указаны правильные UID/GID
-# Проверьте ваши значения:
+# 1. Убедитесь, что в .env указаны правильные UID/GID
 id -u  # должно совпадать с HOST_UID
 id -g  # должно совпадать с HOST_GID
 
-# 3. При необходимости исправьте .env:
+# 2. При необходимости исправьте .env:
 # HOST_UID=1000
 # HOST_GID=1000
 
-# 4. Исправьте права на проект
-sudo chown -R $(id -u):$(id -g) .
+# 3. Пересоберите образ с новыми аргументами
+docker compose build --no-cache
 
-# 5. Пересоберите и запустите контейнеры
-docker compose up -d --force-recreate
+# 4. Запустите контейнеры
+docker compose up -d
 ```
 
-**Шаг 13 скрипта установки** автоматически:
-- Устанавливает права на проект через `sudo chown`
-- Меняет владельца `/var/www/html` внутри контейнера на `${HOST_UID}:${HOST_GID}`
-- Если проблема сохраняется — выполните шаги выше вручную.
+**Как это работает:**
+
+`Dockerfile` в `docker/php/` использует утилиту Server Side Up `docker-php-serversideup-set-id` для изменения UID/GID пользователя `www-data` на этапе сборки. Аргументы `USER_ID` и `GROUP_ID` передаются из `.env` через `docker-compose.yml`.
+
+Первый запуск `docker compose up -d` автоматически собираает образ с правильными UID/GID.
 
 ---
 
