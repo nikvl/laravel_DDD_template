@@ -364,6 +364,12 @@ if [ -f "${PROJECT_DIR}/../.env.example" ]; then
     log_info ".env.example подменён на шаблон из репозитория"
 fi
 
+# Подменяем README Laravel на наш проектный README
+if [ -f "${PROJECT_DIR}/../PROJECT_README.md" ]; then
+    cp "${PROJECT_DIR}/../PROJECT_README.md" README.md
+    log_info "README.md подменён на шаблон проекта"
+fi
+
 log_success "Laravel проект создан"
 
 ################################################################################
