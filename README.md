@@ -74,6 +74,16 @@ curl -sL -O https://raw.githubusercontent.com/nikvl/laravel_DDD_template/main/.e
 | `INFECTION_MIN_MSI` | `90` | Минимальный MSI Infection (%) |
 | `INFECTION_MIN_COVERED_MSI` | `90` | Минимальный Covered MSI (%) |
 
+### CI/CD платформа
+
+| Переменная | По умолчанию | Описание |
+|-----------|--------------|----------|
+| `CI_PLATFORM` | `github` | Платформа CI/CD (`github` или `gitlab`) |
+
+**Варианты:**
+- `github` — GitHub Actions (конфигурация в `.github/workflows/ci.yml`)
+- `gitlab` — GitLab CI/CD (конфигурация в `.gitlab-ci.yml`)
+
 ### Быстрый старт с настройкой
 
 ```bash
@@ -144,6 +154,34 @@ docker compose exec app php artisan <command>
 # Запустить composer команды
 docker compose exec app composer <command>
 ```
+
+### Решение проблем с правами доступа
+
+Если при запуске `composer` внутри контейнера возникает ошибка:
+```
+./composer.json is not writable.
+```
+
+**Решение:**
+
+```bash
+# 1. Остановите контейнеры
+docker compose down
+
+# 2. Убедитесь, что в .env указаны правильные UID/GID
+# Проверьте ваши значения:
+id -u  # должно совпадать с HOST_UID
+id -g  # должно совпадать с HOST_GID
+
+# 3. При необходимости исправьте .env:
+# HOST_UID=1000
+# HOST_GID=1000
+
+# 4. Пересоберите и запустите контейнеры
+docker compose up -d --force-recreate
+```
+
+Шаг 13 скрипта установки автоматически настраивает права, но если вы столкнулись с проблемой после установки — используйте инструкцию выше.
 
 ---
 

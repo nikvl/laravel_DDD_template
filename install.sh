@@ -145,6 +145,10 @@ QUEUE_CONNECTION=redis
 LOAD_TEST_BASE_URL=http://localhost:8080
 LOAD_TEST_API_TOKEN=test-token
 
+# ─── CI/CD Platform ───────────────────────────────────────────────────────────
+# Available options: github, gitlab
+CI_PLATFORM=github
+
 # ─── Code Quality Thresholds ─────────────────────────────────────────────────
 # PHPStan static analysis level (0-9)
 PHPSTAN_LEVEL=9
@@ -463,9 +467,9 @@ version: '3.8'
 services:
   app:
     image: serversideup/php:\${DOCKER_PHP_VERSION:-8.4}-fpm-nginx
+    user: "\${HOST_UID:-1000}:\${HOST_GID:-1000}"
     environment:
-      - PHP_USER_ID=\${HOST_UID:-1000}
-      - PHP_GROUP_ID=\${HOST_GID:-1000}
+      - SSL_MODE=off
     volumes:
       - .:/var/www/html
     depends_on:
@@ -601,12 +605,18 @@ set_env "QUEUE_CONNECTION" "redis"
 set_env "LOAD_TEST_BASE_URL" "http://localhost:8080"
 set_env "LOAD_TEST_API_TOKEN" "test-token"
 
+# CI/CD Platform
+set_env "CI_PLATFORM" "github"
+
 # Читаем пороги качества из .env
 PHPSTAN_LEVEL=$(get_env "PHPSTAN_LEVEL" "9")
 TYPE_COVERAGE_MIN=$(get_env "TYPE_COVERAGE_MINIMUM" "90")
 TEST_COVERAGE_MIN=$(get_env "TEST_COVERAGE_MINIMUM" "80")
 INFECTION_MSI=$(get_env "INFECTION_MIN_MSI" "90")
 INFECTION_COVERED_MSI=$(get_env "INFECTION_MIN_COVERED_MSI" "90")
+
+# Читаем CI/CD платформу
+CI_PLATFORM=$(get_env "CI_PLATFORM" "github")
 
 # pint.json
 cat > pint.json << 'PINTJSON'
@@ -1488,15 +1498,164 @@ PHP
 log_success "Тесты созданы"
 
 ################################################################################
-# Шаг 12/13: Создание GitHub Actions workflow и load-тестов
+# Шаг 12/13: Создание CI/CD workflow и load-тестов
 ################################################################################
 log_info "Шаг 12/13: Настройка CI/CD и нагрузочных тестов..."
 
-mkdir -p .github/workflows
 mkdir -p load-tests/results
 
-# GitHub Actions CI/CD
-cat > .github/workflows/ci.yml << YAML
+# Настройка CI/CD в зависимости от выбранной платформы
+if [ "$CI_PLATFORM" = "gitlab" ]; then
+    log_info "Настройка GitLab CI/CD..."
+
+    cat > .gitlab-ci.yml << GITLABCI
+stages:
+  - test
+  - quality
+  - load-test
+
+variables:
+  DOCKER_PHP_VERSION: "${DOCKER_PHP_VERSION}"
+  DB_VERSION: "${DB_VERSION}"
+  REDIS_VERSION: "${REDIS_VERSION}"
+
+# Кэш для зависимостей
+.cache: &cache
+  cache:
+    key: \${CI_COMMIT_REF_SLUG}
+    paths:
+      - vendor/
+      - node_modules/
+
+# Базовый образ для PHP
+.php-base: &php-base
+  image: serversideup/php:${DOCKER_PHP_VERSION}-fpm-nginx
+  services:
+    - name: postgres:${DB_VERSION}
+      alias: postgres
+      command: ["-c", "max_connections=1000"]
+    - name: redis:${REDIS_VERSION}
+      alias: redis
+  variables:
+    DB_CONNECTION: pgsql
+    DB_HOST: postgres
+    DB_PORT: 5432
+    DB_DATABASE: test
+    DB_USERNAME: postgres
+    DB_PASSWORD: secret
+    REDIS_HOST: redis
+    REDIS_PORT: 6379
+    CACHE_DRIVER: redis
+    SESSION_DRIVER: redis
+    QUEUE_CONNECTION: redis
+
+# Тесты
+tests:
+  <<: *php-base
+  <<: *cache
+  stage: test
+  script:
+    - cp .env.testing .env
+    - php artisan key:generate
+    - php artisan migrate --force
+    - composer test:coverage
+  artifacts:
+    when: always
+    paths:
+      - coverage/
+    reports:
+      junit: coverage/junit.xml
+  coverage: '/^\s*Lines:\s*(\d+\.\d+%)/'
+
+# Статический анализ
+phpstan:
+  <<: *php-base
+  <<: *cache
+  stage: quality
+  script:
+    - composer phpstan
+    - composer phpstan:type-coverage
+    - composer type-coverage
+  artifacts:
+    when: on_failure
+    paths:
+      - phpstan-report/
+
+# Мутационное тестирование
+infection:
+  <<: *php-base
+  <<: *cache
+  stage: quality
+  script:
+    - composer infection
+  artifacts:
+    when: on_failure
+    paths:
+      - infection-log/
+      - summary.log
+      - infection.json
+      - infection-gitlab.json
+    reports:
+      codequality: infection-gitlab.json
+
+# Нагрузочные тесты
+load-test:smoke:
+  <<: *cache
+  stage: load-test
+  image: grafana/k6:latest
+  script:
+    - k6 run --tag test_type=smoke load-tests/user-api.js
+  artifacts:
+    paths:
+      - load-tests/results/
+    when: always
+  rules:
+    - if: '\$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '\$CI_COMMIT_BRANCH == "main"'
+
+load-test:load:
+  <<: *cache
+  stage: load-test
+  image: grafana/k6:latest
+  script:
+    - k6 run --tag test_type=load load-tests/user-api.js
+  artifacts:
+    paths:
+      - load-tests/results/
+    when: always
+  rules:
+    - if: '\$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '\$CI_COMMIT_BRANCH == "main"'
+GITLABCI
+
+    # .env.testing для GitLab
+    cat > .env.testing << 'ENVTEST'
+APP_ENV=testing
+APP_KEY=base64:test1234567890test1234567890te=
+
+DB_CONNECTION=pgsql
+DB_HOST=postgres
+DB_PORT=5432
+DB_DATABASE=test
+DB_USERNAME=postgres
+DB_PASSWORD=secret
+
+REDIS_HOST=redis
+REDIS_PORT=6379
+
+CACHE_STORE=redis
+SESSION_DRIVER=redis
+QUEUE_CONNECTION=redis
+ENVTEST
+
+    log_success "GitLab CI/CD настроен"
+else
+    # По умолчанию GitHub
+    log_info "Настройка GitHub Actions..."
+
+    mkdir -p .github/workflows
+
+    cat > .github/workflows/ci.yml << 'GITHUBCI'
 name: CI
 
 on:
@@ -1511,7 +1670,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:\${DB_VERSION:-17}
+        image: postgres:${{ env.DB_VERSION || '17' }}
         env:
           POSTGRES_DB: test
           POSTGRES_USER: postgres
@@ -1525,7 +1684,7 @@ jobs:
           --health-retries 5
 
       redis:
-        image: redis:\${REDIS_VERSION:-8-alpine}
+        image: redis:${{ env.REDIS_VERSION || '8-alpine' }}
         ports:
           - 6379:6379
         options: >-
@@ -1540,7 +1699,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '${DOCKER_PHP_VERSION}'
+          php-version: '${{ env.DOCKER_PHP_VERSION || '8.4' }}'
           extensions: pgsql, redis
           coverage: xdebug
           tools: infection
@@ -1549,7 +1708,64 @@ jobs:
         run: composer install --prefer-dist --no-progress
 
       - name: Copy environment file
-        run: cp .env.ci .env
+        run: cp .env.testing .env
+
+      - name: Generate application key
+        run: php artisan key:generate
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Run tests with coverage
+        run: composer test:coverage
+        env:
+          XDEBUG_MODE: coverage
+
+  quality:
+    runs-on: ubuntu-latest
+    needs: tests
+
+    services:
+      postgres:
+        image: postgres:${{ env.DB_VERSION || '17' }}
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:${{ env.REDIS_VERSION || '8-alpine' }}
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '${{ env.DOCKER_PHP_VERSION || '8.4' }}'
+          extensions: pgsql, redis
+          coverage: xdebug
+          tools: infection
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress
+
+      - name: Copy environment file
+        run: cp .env.testing .env
 
       - name: Generate application key
         run: php artisan key:generate
@@ -1563,11 +1779,6 @@ jobs:
       - name: Run PHPStan
         run: composer phpstan
 
-      - name: Run tests with coverage
-        run: composer test:coverage
-        env:
-          XDEBUG_MODE: coverage
-
       - name: Check type coverage
         run: composer type-coverage
 
@@ -1575,10 +1786,33 @@ jobs:
         run: composer infection
         env:
           XDEBUG_MODE: coverage
-YAML
 
-# .env.ci
-cat > .env.ci << 'ENVCI'
+  load-test:
+    runs-on: ubuntu-latest
+    needs: tests
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run smoke test
+        run: k6 run --tag test_type=smoke load-tests/user-api.js
+        env:
+          BASE_URL: ${{ vars.LOAD_TEST_BASE_URL || 'http://localhost:8080' }}
+          API_TOKEN: ${{ secrets.LOAD_TEST_API_TOKEN || 'test-token' }}
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-results
+          path: load-tests/results/
+GITHUBCI
+
+    # .env.testing для GitHub
+    cat > .env.testing << 'ENVTEST'
 APP_ENV=testing
 APP_KEY=base64:test1234567890test1234567890te=
 
@@ -1595,9 +1829,12 @@ REDIS_PORT=6379
 CACHE_STORE=redis
 SESSION_DRIVER=redis
 QUEUE_CONNECTION=redis
-ENVCI
+ENVTEST
 
-# Load test script (k6)
+    log_success "GitHub Actions настроен"
+fi
+
+# Load test script (k6) - общий для обеих платформ
 cat > load-tests/user-api.js << 'K6JS'
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -1648,14 +1885,14 @@ const headers = {
 
 export default function () {
   const response = http.get(`${BASE_URL}/api/users`, { headers });
-  
+
   check(response, {
     'list users: status is 200': (r) => r.status === 200,
   });
-  
+
   errorRate.add(response.status !== 200);
   apiLatency.add(response.timings.duration);
-  
+
   sleep(1);
 }
 
@@ -1683,11 +1920,27 @@ else
     exit 1
 fi
 
+# Устанавливаем правильные права на проект
+log_info "Установка прав доступа на проект..."
+sudo chown -R ${HOST_UID}:${HOST_GID} "${PROJECT_DIR}" 2>/dev/null || \
+    log_warning "Не удалось установить права (будет исправлено в контейнере)"
+
 log_info "Запуск Docker контейнеров..."
 $DOCKER_COMPOSE_CMD up -d
 
 log_info "Ожидание готовности контейнеров..."
 sleep 10
+
+# Внутри контейнера Server Side Up использует www-data (UID 1000 по умолчанию)
+# Но если HOST_UID/HOST_GID изменены, нужно настроить права
+log_info "Настройка прав внутри контейнера..."
+$DOCKER_COMPOSE_CMD exec -T app bash -c "
+    if [ \$(id -u www-data) != ${HOST_UID} ]; then
+        usermod -u ${HOST_UID} www-data 2>/dev/null || true
+        groupmod -g ${HOST_GID} www-data 2>/dev/null || true
+    fi
+    chown -R www-data:www-data /var/www/html 2>/dev/null || true
+" || log_warning "Не удалось настроить права внутри контейнера"
 
 log_info "Запуск PHPStan (базовый уровень)..."
 $DOCKER_COMPOSE_CMD exec -T app composer phpstan || log_warning "PHPStan обнаружил ошибки (это можно исправить вручную)"
@@ -1702,7 +1955,7 @@ if [ "$PHP_NEED_INSTALL" = true ] && [ "$PHP_INSTALLED" = true ]; then
     log_info "Остановка локального PHP ${PHP_VERSION_TARGET}..."
     sudo systemctl stop php${PHP_VERSION_TARGET}-fpm 2>/dev/null || true
     sudo systemctl disable php${PHP_VERSION_TARGET}-fpm 2>/dev/null || true
-    
+
     log_info "Удаление локального PHP ${PHP_VERSION_TARGET}..."
     if [ -f /etc/debian_version ] || [ -f /etc/ubuntu-version ]; then
         sudo apt-get remove -y php${PHP_VERSION_TARGET}-cli php${PHP_VERSION_TARGET}-fpm \
@@ -1715,8 +1968,14 @@ if [ "$PHP_NEED_INSTALL" = true ] && [ "$PHP_INSTALLED" = true ]; then
     elif [ -f /etc/arch-release ]; then
         sudo pacman -R --noconfirm php 2>/dev/null || true
     fi
-    
+
     log_success "Локальный PHP удалён"
+fi
+
+# Удаляем временный .env.example из стартовой директории (он уже скопирован в проект)
+if [ -f ".env.example" ]; then
+    rm -f ".env.example"
+    log_info "Временный .env.example удалён из текущей директории"
 fi
 
 ################################################################################
