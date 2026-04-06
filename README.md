@@ -224,8 +224,7 @@ docker compose up -d
     "laravel/framework": "^12.0",
     "spatie/laravel-data": "^5.0",
     "spatie/laravel-event-sourcing": "^8.0",
-    "spatie/laravel-permission": "^8.0",
-    "thecodingmachine/safe": "^3.0"
+    "spatie/laravel-permission": "^8.0"
   },
   "require-dev": {
     "laravel/pint": "^1.0",

@@ -201,7 +201,6 @@ case "$PHP_VERSION_TARGET" in
         SPATIE_DATA_VERSION="^4.0"
         SPATIE_EVENT_SOURCING_VERSION="^7.0"
         SPATIE_PERMISSION_VERSION="^7.0"
-        SAFECODE_VERSION="^2.0"
         PEST_VERSION="^3.0"
         PEST_PLUGIN_VERSION="^3.0"
         INFECTION_VERSION="^0.29.0"
@@ -213,7 +212,6 @@ case "$PHP_VERSION_TARGET" in
         SPATIE_DATA_VERSION="^4.0"
         SPATIE_EVENT_SOURCING_VERSION="^7.0"
         SPATIE_PERMISSION_VERSION="^7.0"
-        SAFECODE_VERSION="^3.0"
         PEST_VERSION="^4.0"
         PEST_PLUGIN_VERSION="^4.0"
         INFECTION_VERSION="^0.30.0"
@@ -226,7 +224,6 @@ case "$PHP_VERSION_TARGET" in
         SPATIE_DATA_VERSION="^4.0"
         SPATIE_EVENT_SOURCING_VERSION="^7.0"
         SPATIE_PERMISSION_VERSION="^7.0"
-        SAFECODE_VERSION="^2.0"
         PEST_VERSION="^3.0"
         PEST_PLUGIN_VERSION="^3.0"
         INFECTION_VERSION="^0.29.0"
@@ -379,7 +376,6 @@ composer require \
     "spatie/laravel-data:${SPATIE_DATA_VERSION}" \
     "spatie/laravel-event-sourcing:${SPATIE_EVENT_SOURCING_VERSION}" \
     "spatie/laravel-permission:${SPATIE_PERMISSION_VERSION}" \
-    "thecodingmachine/safe:${SAFECODE_VERSION}" \
     --no-interaction
 
 log_success "Основные пакеты установлены"
@@ -1950,13 +1946,31 @@ $DOCKER_COMPOSE_CMD up -d
 log_info "Ожидание готовности контейнеров..."
 sleep 10
 
+# Запуск проверок качества (не прерывают скрипт при ошибках)
+set +e
+
 log_info "Запуск PHPStan (базовый уровень)..."
-$DOCKER_COMPOSE_CMD exec -T app composer phpstan || log_warning "PHPStan обнаружил ошибки (это можно исправить вручную)"
+$DOCKER_COMPOSE_CMD exec -T app composer phpstan
+PHPSTAN_EXIT=$?
+if [ $PHPSTAN_EXIT -ne 0 ]; then
+    log_warning "PHPStan обнаружил ошибки (это можно исправить вручную)"
+fi
 
 log_info "Запуск Pest тестов..."
-$DOCKER_COMPOSE_CMD exec -T app composer test || log_warning "Тесты не прошли (это можно исправить вручную)"
+$DOCKER_COMPOSE_CMD exec -T app composer test
+TEST_EXIT=$?
+if [ $TEST_EXIT -ne 0 ]; then
+    log_warning "Тесты не прошли (это можно исправить вручную)"
+fi
 
-log_success "Все проверки качества выполнены"
+# Возвращаем строгий режим
+set -e
+
+if [ $PHPSTAN_EXIT -eq 0 ] && [ $TEST_EXIT -eq 0 ]; then
+    log_success "Все проверки качества выполнены"
+else
+    log_warning "Проверки завершены с предупреждениями (код всё равно можно использовать)"
+fi
 
 # Удаление локального PHP если он был установлен этим скриптом
 if [ "$PHP_NEED_INSTALL" = true ] && [ "$PHP_INSTALLED" = true ]; then
