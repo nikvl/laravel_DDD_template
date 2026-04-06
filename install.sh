@@ -467,9 +467,10 @@ version: '3.8'
 services:
   app:
     image: serversideup/php:\${DOCKER_PHP_VERSION:-8.4}-fpm-nginx
-    user: "\${HOST_UID:-1000}:\${HOST_GID:-1000}"
     environment:
-      - SSL_MODE=off
+      - PHP_OPCACHE_ENABLE=1
+      - PHP_USER_ID=\${HOST_UID:-1000}
+      - PHP_GROUP_ID=\${HOST_GID:-1000}
     volumes:
       - .:/var/www/html
     depends_on:
@@ -1923,24 +1924,13 @@ fi
 # Устанавливаем правильные права на проект
 log_info "Установка прав доступа на проект..."
 sudo chown -R ${HOST_UID}:${HOST_GID} "${PROJECT_DIR}" 2>/dev/null || \
-    log_warning "Не удалось установить права (будет исправлено в контейнере)"
+    log_warning "Не удалось установить права (проверьте sudo доступ)"
 
 log_info "Запуск Docker контейнеров..."
 $DOCKER_COMPOSE_CMD up -d
 
 log_info "Ожидание готовности контейнеров..."
 sleep 10
-
-# Внутри контейнера Server Side Up использует www-data (UID 1000 по умолчанию)
-# Но если HOST_UID/HOST_GID изменены, нужно настроить права
-log_info "Настройка прав внутри контейнера..."
-$DOCKER_COMPOSE_CMD exec -T app bash -c "
-    if [ \$(id -u www-data) != ${HOST_UID} ]; then
-        usermod -u ${HOST_UID} www-data 2>/dev/null || true
-        groupmod -g ${HOST_GID} www-data 2>/dev/null || true
-    fi
-    chown -R www-data:www-data /var/www/html 2>/dev/null || true
-" || log_warning "Не удалось настроить права внутри контейнера"
 
 log_info "Запуск PHPStan (базовый уровень)..."
 $DOCKER_COMPOSE_CMD exec -T app composer phpstan || log_warning "PHPStan обнаружил ошибки (это можно исправить вручную)"
