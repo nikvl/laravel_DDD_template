@@ -1932,6 +1932,11 @@ $DOCKER_COMPOSE_CMD up -d
 log_info "Ожидание готовности контейнеров..."
 sleep 10
 
+# Смена владельца /var/www/html внутри контейнера на нужный UID/GID
+log_info "Настройка прав внутри контейнера (/var/www/html)..."
+$DOCKER_COMPOSE_CMD exec -T app chown -R ${HOST_UID}:${HOST_GID} /var/www/html || \
+    log_warning "Не удалось сменить права внутри контейнера"
+
 log_info "Запуск PHPStan (базовый уровень)..."
 $DOCKER_COMPOSE_CMD exec -T app composer phpstan || log_warning "PHPStan обнаружил ошибки (это можно исправить вручную)"
 
